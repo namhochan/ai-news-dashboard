@@ -14,7 +14,7 @@ def save_json(path, obj):
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
 # ──────────────────────────────────────────────────────────────────────────
-# 1) 지수/환율/원자재 (Yahoo Finance)
+# 1) 지수/환율/원자재 (Yahoo Finance)  → value/delta/pct 저장
 # ──────────────────────────────────────────────────────────────────────────
 def fetch_market_today():
     tickers = {
@@ -23,22 +23,23 @@ def fetch_market_today():
         "USD_KRW": "KRW=X",
         "WTI": "CL=F",
         "Gold": "GC=F",
-        "NASDAQ": "^IXIC",
-        "S&P500": "^GSPC",
-        "DOW": "^DJI",
     }
     out = {}
     for k, t in tickers.items():
         try:
-            df = yf.download(t, period="5d", interval="1d", progress=False)
-            out[k] = f"{float(df['Close'].iloc[-1]):,}"
+            df = yf.download(t, period="10d", interval="1d", progress=False).dropna()
+            last = float(df["Close"].iloc[-1])
+            prev = float(df["Close"].iloc[-2]) if len(df) >= 2 else last
+            delta = last - prev
+            pct = (delta / prev * 100) if prev else 0.0
+            out[k] = {"value": last, "delta": delta, "pct": pct}
         except Exception:
             pass
 
     comment = []
     try:
-        if float(out.get("USD_KRW","0").replace(",","")) >= 1400: comment.append("원/달러 고평가")
-        if float(out.get("WTI","0").replace(",","")) >= 85: comment.append("유가 강세")
+        if out.get("USD_KRW", {}).get("value", 0) >= 1400: comment.append("원/달러 고평가")
+        if out.get("WTI", {}).get("value", 0) >= 85: comment.append("유가 강세")
     except Exception:
         pass
     out["comment"] = " · ".join(comment) if comment else "혼조 속 개별 모멘텀"
@@ -72,7 +73,7 @@ def collect_headlines():
         except Exception:
             continue
 
-    # (선택) NewsAPI 보강 – 리포지토리 Secrets에 NEWSAPI_KEY 있으면 자동 사용
+    # (선택) NewsAPI 보강 – 레포 Secrets에 NEWSAPI_KEY 있으면 사용
     key = os.getenv("NEWSAPI_KEY")
     if key:
         try:
@@ -89,13 +90,12 @@ def collect_headlines():
                     items.append({"title": title, "url": url, "published": pub, "source": src})
         except Exception:
             pass
-
     return items
 
 def build_keyword_map(headlines):
     cnt = Counter()
     for item in headlines:
-        low = item.get("title","").lower()
+        low = (item.get("title") or "").lower()
         for kw in KEYWORDS:
             if kw.lower() in low:
                 cnt[kw] += 1
@@ -111,7 +111,6 @@ THEME_DEF = [
     {"name":"ESS/배터리", "keys":["ESS","배터리","전력"], "stocks":["씨아이에스","엠플러스","천보","코스모신소재"]},
     {"name":"원전/SMR", "keys":["원전","SMR"], "stocks":["두산에너빌리티","보성파워텍","한신기계"]},
 ]
-
 def make_theme_top5(kw_map):
     scored = []
     for t in THEME_DEF:
@@ -136,23 +135,19 @@ def main():
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
     print(f"[Updater] start @ {now} KST")
 
-    # 1) 시장 요약
     market = fetch_market_today()
     save_json(os.path.join(DATA, "market_today.json"), market)
     print(" - market_today.json updated")
 
-    # 2) 뉴스 헤드라인
     heads = collect_headlines()
     print(f" - collected headlines: {len(heads)}")
     save_json(os.path.join(DATA, "headlines.json"), heads[:50])
     print(" - headlines.json updated")
 
-    # 3) 키워드맵
     kw_map = build_keyword_map(heads)
     save_json(os.path.join(DATA, "keyword_map.json"), kw_map)
     print(" - keyword_map.json updated")
 
-    # 4) 테마 Top5
     themes = make_theme_top5(kw_map)
     save_json(os.path.join(DATA, "theme_top5.json"), themes)
     print(" - theme_top5.json updated")
