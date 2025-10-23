@@ -284,3 +284,108 @@ st.caption(f"🗓 최근 3일 · 카테고리: {cat} · {total}개 중 {start+1}
 
 with st.expander("🧪 디버그(수집결과 및 요청 확인)"):
     st.write({"cat": cat, "total": total, "page": page, "start": start, "end": end})
+# ================================
+# 뉴스 기반 테마 감지 + 대표 종목 시세
+# ================================
+st.divider()
+st.markdown("## 🔥 뉴스 기반 테마 요약")
+
+# 1) 테마 사전 (키워드 → 테마)
+THEME_KEYWORDS = {
+    "AI":        ["ai", "인공지능", "생성형", "챗봇", "오픈AI", "엔비디아", "GPU"],
+    "반도체":     ["반도체", "hbm", "메모리", "파운드리", "칩", "램", "소부장"],
+    "로봇":       ["로봇", "자율주행로봇", "AMR", "협동로봇", "로보틱스"],
+    "이차전지":    ["2차전지", "이차전지", "배터리", "전고체", "양극재", "음극재", "LFP"],
+    "에너지":     ["에너지", "유가", "전력", "가스", "정유", "재생에너지", "풍력", "태양광"],
+    "조선":       ["조선", "선박", "수주", "LNG선", "해운"],
+    "LNG":       ["lng", "액화천연가스", "가스공사", "터미널"],
+    "원전":       ["원전", "원자력", "SMR", "원전수출", "원전정비"],
+    "바이오":     ["바이오", "제약", "신약", "임상", "항암", "바이오시밀러"],
+}
+
+# 2) 테마 → 대표종목(티커) 매핑
+THEME_STOCKS = {
+    "AI":       [("삼성전자","005930.KS"), ("네이버","035420.KS"), ("카카오","035720.KS"), ("더존비즈온","012510.KS")],
+    "반도체":   [("삼성전자","005930.KS"), ("SK하이닉스","000660.KS"), ("DB하이텍","000990.KS"), ("한미반도체","042700.KQ")],
+    "로봇":     [("레인보우로보틱스","277810.KQ"), ("유진로봇","056080.KQ"), ("티로보틱스","117730.KQ"), ("로보스타","090360.KQ")],
+    "이차전지": [("LG에너지솔루션","373220.KS"), ("포스코퓨처엠","003670.KS"), ("에코프로","086520.KQ"), ("에코프로비엠","247540.KQ")],
+    "에너지":   [("한국전력","015760.KS"), ("두산에너빌리티","034020.KS"), ("GS","078930.KS"), ("SK이노베이션","096770.KS")],
+    "조선":     [("HD한국조선해양","009540.KS"), ("HD현대미포","010620.KS"), ("삼성중공업","010140.KS"), ("한화오션","042660.KS")],
+    "LNG":     [("한국가스공사","036460.KS"), ("지에스이","053050.KQ"), ("대성에너지","117580.KQ"), ("SK가스","018670.KS")],
+    "원전":     [("두산에너빌리티","034020.KS"), ("우진","105840.KQ"), ("한전KPS","051600.KS"), ("한전기술","052690.KS")],
+    "바이오":   [("삼성바이오로직스","207940.KS"), ("셀트리온","068270.KS"), ("에스티팜","237690.KQ"), ("메디톡스","086900.KQ")],
+}
+
+def normalize_text(s: str) -> str:
+    return (s or "").lower()
+
+def detect_themes(news_list):
+    """
+    뉴스 타이틀/요약에서 키워드 매칭 → 테마 카운트/샘플링크
+    """
+    counts = {t: 0 for t in THEME_KEYWORDS}
+    sample_link = {t: "" for t in THEME_KEYWORDS}
+
+    for n in news_list:
+        text = normalize_text(f"{n.get('title','')} {n.get('desc','')}")
+        for theme, kws in THEME_KEYWORDS.items():
+            if any(k in text for k in kws):
+                counts[theme] += 1
+                if not sample_link[theme]:
+                    sample_link[theme] = n.get("link","")
+
+    rows = []
+    for theme, c in counts.items():
+        if c > 0:
+            rows.append({
+                "theme": theme,
+                "count": c,
+                "sample_link": sample_link[theme],
+                "rep_stocks": " · ".join([nm for nm, _ in THEME_STOCKS.get(theme, [])]) or "-",
+            })
+    rows.sort(key=lambda x: x["count"], reverse=True)
+    return rows
+
+# 3) 수집된 전체 뉴스(모든 카테고리)로 테마 스코어링
+all_news_3days = []
+for cat_name in CATEGORIES.keys():
+    all_news_3days.extend(fetch_category_news(cat_name, days=3, max_items=100))
+
+theme_rows = detect_themes(all_news_3days)
+
+if not theme_rows:
+    st.info("최근 3일 기준 테마 신호가 약합니다. (매칭 결과 없음)")
+else:
+    # 상위 5개만 배지로 표시
+    top5 = theme_rows[:5]
+    badge_html = "<style>.tbadge{display:inline-block;margin:6px 6px 0 0;padding:6px 10px;border:1px solid #2b3a55;border-radius:10px;background:#0f1420} .tbadge b{color:#c7d2fe}</style>"
+    st.markdown(badge_html, unsafe_allow_html=True)
+    st.markdown("**TOP 테마**: " + " ".join([f"<span class='tbadge'><b>{r['theme']}</b> {r['count']}건</span>" for r in top5]), unsafe_allow_html=True)
+
+    # 표로 상세
+    import pandas as pd
+    st.dataframe(pd.DataFrame(theme_rows), use_container_width=True, hide_index=True)
+
+    st.markdown("### 🧩 대표 종목 시세 (TOP5 테마)")
+    # 테마별 대표 종목 현재가
+    def safe_yf_price(ticker):
+        try:
+            last, prev = fetch_quote(ticker)
+            if last is None or prev in (None, 0):
+                return "-", "-"
+            return fmt_number(last, 0), fmt_percent((last-prev)/prev*100)
+        except Exception:
+            return "-", "-"
+
+    for tr in top5:
+        theme = tr["theme"]
+        stocks = THEME_STOCKS.get(theme, [])
+        if not stocks:
+            continue
+        st.write(f"**{theme}**")
+        cols = st.columns(len(stocks))
+        for col, (name, ticker) in zip(cols, stocks):
+            with col:
+                px, chg = safe_yf_price(ticker)
+                st.markdown(f"**{name}**  \n`ticker: {ticker}`  \n**{px}**  {chg}")
+        st.divider()
