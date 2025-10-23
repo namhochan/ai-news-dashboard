@@ -1,16 +1,44 @@
 {
-  "updated_at": "2025-10-23 18:58:26 (KST)",
-  "kospi": {
+  "KOSPI": {
     "value": null,
-    "change_pct": null
+    "prev": null,
+    "change_pct": null,
+    "ticker": "^KS11",
+    "asof": "2025-10-23T19:40:04.465528+09:00"
   },
-  "kosdaq": {
+  "KOSDAQ": {
     "value": null,
-    "change_pct": null
+    "prev": null,
+    "change_pct": null,
+    "ticker": "^KQ11",
+    "asof": "2025-10-23T19:40:04.520212+09:00"
   },
-  "usdkrw": {
+  "USDKRW": {
     "value": null,
-    "change_pct": null
+    "prev": null,
+    "change_pct": null,
+    "ticker": "KRW=X",
+    "asof": "2025-10-23T19:40:04.570092+09:00"
   },
-  "memo": "지표/환율은 추후 소스 연동 예정"
+  "WTI": {
+    "value": null,
+    "prev": null,
+    "change_pct": null,
+    "ticker": "CL=F",
+    "asof": "2025-10-23T19:40:04.655955+09:00"
+  },
+  "Gold": {
+    "value": null,
+    "prev": null,
+    "change_pct": null,
+    "ticker": "GC=F",
+    "asof": "2025-10-23T19:40:04.709650+09:00"
+  },
+  "Copper": {
+    "value": null,
+    "prev": null,
+    "change_pct": null,
+    "ticker": "HG=F",
+    "asof": "2025-10-23T19:40:04.783978+09:00"
+  }
 }

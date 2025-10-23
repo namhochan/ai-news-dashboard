@@ -2,18 +2,26 @@
   "keywords": [
     {
       "keyword": "ai",
-      "count": 10
+      "count": 9
     },
     {
-      "keyword": "인공지능",
-      "count": 3
+      "keyword": "반도체",
+      "count": 2
     },
     {
       "keyword": "조선",
       "count": 2
     },
     {
-      "keyword": "반도체",
+      "keyword": "인공지능",
+      "count": 2
+    },
+    {
+      "keyword": "파운드리",
+      "count": 1
+    },
+    {
+      "keyword": "로봇",
       "count": 1
     },
     {

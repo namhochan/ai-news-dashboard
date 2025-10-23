@@ -2,21 +2,27 @@
   "themes": [
     {
       "theme": "AI",
-      "count": 13,
-      "score": 13,
-      "sample_link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxON3RNV1d4NkZCa2MwNVBDMDdUdllraGIzMEt3REZkbFlrQ0kzNUdodXdHZUl3QmNfUm0weS04bXBzMTh1NGJGS0pLaEdHd3d0cFdONlBSNG9jZjMzN2g1ZlJESWVmaW1CajRGeldUbk10V1I3cEFEeURsQzRwOGYzOQ?oc=5"
+      "count": 11,
+      "score": 11,
+      "sample_link": "https://news.google.com/rss/articles/CBMic0FVX3lxTFBRUkVPeGFRYmV1cFlSeWUxWGFudjV4SFpQNFJKUm9JQjNGMzBTQ29jOEt3aFc5WnlGRnZ0YjNGSXl1VGxYaFpmU0NWTExmUWFXR1lRWVZzbVpmSTB3eklIai11R2YxaklBd1BfVkJycmNWTUE?oc=5"
+    },
+    {
+      "theme": "반도체",
+      "count": 3,
+      "score": 3,
+      "sample_link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTFAyVVhGZzZ2OEg2X25RbTZzd3B4WTVHUmw1NEdkbGlidWU0aWpMZm5nOEFQNHdyUzBoMnpkcGVDSFBfSUxPNEZHY09zdm1YN0IzODFDag?oc=5"
     },
     {
       "theme": "조선",
       "count": 2,
       "score": 2,
-      "sample_link": "https://news.google.com/rss/articles/CBMia0FVX3lxTFB0U2xxZURXRjVTcDNpYlJORWltdnVjSnJVcG50Wl9ucDBoWEJ0Z242Q1JOemFTQXYxVzlTRHc3dV9VUVVsM08xUUdXbXN1cEMxZElIcmgtbTlsYXI5T0ZQRlplRmVaT1ZyY1VJ0gFuQVVfeXFMTVUyN2dqbm9XaUhPMElHcnIxSmF1UDA1VEYwWkFZRno3cUVrYklGeV9jZ3B2YTFvck94VmtZUC14bGt4WnNtWjJqSHVlYzM2VDZ4T21DNjR6UkR0UXpEajRWOUNiNDlQdkFXTTJXbHc?oc=5"
+      "sample_link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxNREtrZUtrOVBIa1prSllmX1RwZHBGMnRxRVlXcGt1QmxyZjRuTzhNXzRoWEpHWlNkSnhTS3I1YWEyZFBRbEpPY3RLdFhRUnhzSEgtUmpyb3ZPbnlKbTI2TDh6bHBWX1lZNWhZX1JuNVQ5UVl6WHdXTjhIZW1xQXU5a1JCNjFmZDRF0gGcAUFVX3lxTE8yQ0l5WFNkWHFvSW00VElWcXlMVndDVzdOZDlTZUUwNFRBNHNYZFM4a1k1T2s5NGRQb0Z1c1NCd19SaGNWb0dJdEY4XzRrZHpkbHM1MkhHelN1ZnZsdVFfdUxNVEdSTHRqMWFEaDVFdGQyT3J2ZFA1QzlNYkZfU2pudDA4TkFrdldRMVdwRmhtcWtFOVF6ZlZLNHFqOA?oc=5"
     },
     {
-      "theme": "반도체",
+      "theme": "로봇",
       "count": 1,
       "score": 1,
-      "sample_link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTFAyVVhGZzZ2OEg2X25RbTZzd3B4WTVHUmw1NEdkbGlidWU0aWpMZm5nOEFQNHdyUzBoMnpkcGVDSFBfSUxPNEZHY09zdm1YN0IzODFDag?oc=5"
+      "sample_link": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE9ISlRzU3R3Qm9pR056cUd2dUtkNmZGdlFBYzkxZGZobzEyQ2dTVXRTMlNITm5LVUwtR1dfdlg2RjkwRHQyMHRCQlZTOWl0bmIteks5LXFQQ0FLbU9GU1RQbXVzeHlDenhU0gFsQVVfeXFMTmhURmpkOWMwdDZRWGhlOWVrZ0EwTHFKbkEwNGNsNTJ6NC1COUs3OXJMejJRWlI0QVg0UHV1bjNDWnR2b1JDLURRRzFiMkw0UjdaRTdORGViQjIxR0lRTmZOT01MWjE0WHRYeW10?oc=5"
     },
     {
       "theme": "이차전지",
