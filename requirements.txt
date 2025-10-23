@@ -1,7 +1,5 @@
 streamlit>=1.38
-yfinance>=0.2.40
+yfinance>=0.2.43
 pandas>=2.2
-numpy>=1.26
-requests
 feedparser>=6.0
 beautifulsoup4>=4.12
