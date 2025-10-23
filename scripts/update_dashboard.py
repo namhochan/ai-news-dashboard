@@ -1,9 +1,9 @@
-import json, os, re, time
+
+import json, os, re
 from datetime import datetime
 from collections import Counter
 import pytz, requests, feedparser, yfinance as yf
 
-# ── 경로/타임존
 ROOT = os.path.dirname(os.path.dirname(__file__))
 DATA = os.path.join(ROOT, "data")
 KST = pytz.timezone("Asia/Seoul")
@@ -13,9 +13,7 @@ def save_json(path, obj):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
-# ──────────────────────────────────────────────────────────────────────────
-# 1) 지수/환율/원자재 (Yahoo Finance)  → value/delta/pct 저장
-# ──────────────────────────────────────────────────────────────────────────
+# ---------- 1) market ----------
 def fetch_market_today():
     tickers = {
         "KOSPI": "^KS11",
@@ -35,26 +33,23 @@ def fetch_market_today():
             out[k] = {"value": last, "delta": delta, "pct": pct}
         except Exception:
             pass
-
     comment = []
     try:
         if out.get("USD_KRW", {}).get("value", 0) >= 1400: comment.append("원/달러 고평가")
         if out.get("WTI", {}).get("value", 0) >= 85: comment.append("유가 강세")
     except Exception:
         pass
-    out["comment"] = " · ".join(comment) if comment else "혼조 속 개별 모멘텀"
+    out["comment"] = " · ".join(comment) if comment else "혼조"
     return out
 
-# ──────────────────────────────────────────────────────────────────────────
-# 2) 뉴스 수집 (RSS + 선택: NewsAPI)  → 제목/링크/시간/출처
-# ──────────────────────────────────────────────────────────────────────────
+# ---------- 2) headlines (RSS) ----------
 NEWS_SOURCES = [
-    "https://news.google.com/rss/search?q=AI%20반도체&hl=ko&gl=KR&ceid=KR:ko",
-    "https://news.google.com/rss/search?q=로봇%20스마트팩토리&hl=ko&gl=KR&ceid=KR:ko",
-    "https://news.google.com/rss/search?q=조선%20LNG%20해양플랜트&hl=ko&gl=KR&ceid=KR:ko",
-    "https://news.google.com/rss/search?q=ESS%20배터리&hl=ko&gl=KR&ceid=KR:ko",
-    "https://news.google.com/rss/search?q=원전%20SMR&hl=ko&gl=KR&ceid=KR:ko",
-    "https://news.google.com/rss/search?q=한국%20증시&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=AI%20%EB%B0%98%EB%8F%84%EC%B2%B4&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=%EB%A1%9C%EB%B4%87%20%EC%8A%A4%EB%A7%88%ED%8A%B8%ED%8C%A9%ED%86%A0%EB%A6%AC&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=%EC%A1%B0%EC%84%A0%20LNG%20%ED%95%B4%EC%96%91%ED%94%8C%EB%9E%9C%ED%8A%B8&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=ESS%20%EB%B0%B0%ED%84%B0%EB%A6%AC&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=%EC%9B%90%EC%A0%84%20SMR&hl=ko&gl=KR&ceid=KR:ko",
+    "https://news.google.com/rss/search?q=%ED%95%9C%EA%B5%AD%20%EC%A6%9D%EC%8B%9C&hl=ko&gl=KR&ceid=KR:ko",
 ]
 KEYWORDS = ["AI","반도체","HBM","로봇","스마트팩토리","조선","LNG","해양","ESS","배터리","전력","원전","SMR","수소","환율","수출","바이오","게임"]
 
@@ -64,7 +59,7 @@ def collect_headlines():
         try:
             feed = feedparser.parse(url)
             for e in feed.entries[:30]:
-                title = re.sub(r"\s+"," ", getattr(e, "title", ""))
+                title = re.sub(r"\s+", " ", getattr(e, "title", "") or "")
                 link  = getattr(e, "link", "")
                 pub   = getattr(e, "published", "") or getattr(e, "updated", "")
                 src   = getattr(getattr(e, "source", None), "title", "") if hasattr(e, "source") else ""
@@ -72,24 +67,6 @@ def collect_headlines():
                     items.append({"title": title, "url": link, "published": pub, "source": src})
         except Exception:
             continue
-
-    # (선택) NewsAPI 보강 – 레포 Secrets에 NEWSAPI_KEY 있으면 사용
-    key = os.getenv("NEWSAPI_KEY")
-    if key:
-        try:
-            q = "AI OR 반도체 OR 로봇 OR 조선 OR ESS OR 원전"
-            r = requests.get(
-                "https://newsapi.org/v2/everything",
-                params={"q": q, "language":"ko", "pageSize":50, "sortBy":"publishedAt"},
-                headers={"X-Api-Key": key},
-                timeout=12,
-            )
-            for a in r.json().get("articles", []):
-                title = a.get("title"); url = a.get("url"); pub = a.get("publishedAt",""); src = a.get("source",{}).get("name","")
-                if title and url:
-                    items.append({"title": title, "url": url, "published": pub, "source": src})
-        except Exception:
-            pass
     return items
 
 def build_keyword_map(headlines):
@@ -101,9 +78,7 @@ def build_keyword_map(headlines):
                 cnt[kw] += 1
     return dict(cnt.most_common(20))
 
-# ──────────────────────────────────────────────────────────────────────────
-# 3) 테마 Top5 산출
-# ──────────────────────────────────────────────────────────────────────────
+# ---------- 3) themes ----------
 THEME_DEF = [
     {"name":"AI 반도체", "keys":["AI","반도체","HBM"], "stocks":["삼성전자","하이닉스","엘비세미콘","티씨케이"]},
     {"name":"로봇/스마트팩토리", "keys":["로봇","스마트팩토리"], "stocks":["유진로봇","휴림로봇","한라캐스트"]},
@@ -128,31 +103,20 @@ def make_theme_top5(kw_map):
         })
     return out
 
-# ──────────────────────────────────────────────────────────────────────────
-# 4) 메인
-# ──────────────────────────────────────────────────────────────────────────
+# ---------- main ----------
 def main():
-    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-    print(f"[Updater] start @ {now} KST")
-
     market = fetch_market_today()
+    heads  = collect_headlines()
+    kwmap  = build_keyword_map(heads)
+    themes = make_theme_top5(kwmap)
+
+    os.makedirs(DATA, exist_ok=True)
     save_json(os.path.join(DATA, "market_today.json"), market)
-    print(" - market_today.json updated")
-
-    heads = collect_headlines()
-    print(f" - collected headlines: {len(heads)}")
-    save_json(os.path.join(DATA, "headlines.json"), heads[:50])
-    print(" - headlines.json updated")
-
-    kw_map = build_keyword_map(heads)
-    save_json(os.path.join(DATA, "keyword_map.json"), kw_map)
-    print(" - keyword_map.json updated")
-
-    themes = make_theme_top5(kw_map)
+    save_json(os.path.join(DATA, "headlines.json"), heads[:60])
+    save_json(os.path.join(DATA, "keyword_map.json"), kwmap)
     save_json(os.path.join(DATA, "theme_top5.json"), themes)
-    print(" - theme_top5.json updated")
 
-    print("[Updater] done")
+    print("[Updater] done", datetime.now(KST).strftime("%Y-%m-%d %H:%M"))
 
 if __name__ == "__main__":
     main()
