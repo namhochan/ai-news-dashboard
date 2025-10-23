@@ -1,57 +1,89 @@
 {
-  "timestamp_kst": "2025-10-23T16:26:50.917096+09:00",
-  "items": [
+  "updated_at_kst": "2025-10-23 17:08",
+  "keywords": [
     {
       "keyword": "AI",
-      "count": 100
+      "count": 0
     },
     {
       "keyword": "반도체",
-      "count": 100
+      "count": 0
+    },
+    {
+      "keyword": "HBM",
+      "count": 0
+    },
+    {
+      "keyword": "메모리",
+      "count": 0
+    },
+    {
+      "keyword": "GPU",
+      "count": 0
     },
     {
       "keyword": "로봇",
-      "count": 100
+      "count": 0
     },
     {
       "keyword": "스마트팩토리",
-      "count": 7
+      "count": 0
+    },
+    {
+      "keyword": "자동차",
+      "count": 0
     },
     {
       "keyword": "조선",
-      "count": 94
+      "count": 0
     },
     {
       "keyword": "LNG",
-      "count": 15
+      "count": 0
     },
     {
       "keyword": "해양",
-      "count": 27
+      "count": 0
+    },
+    {
+      "keyword": "선박",
+      "count": 0
     },
     {
       "keyword": "원전",
-      "count": 35
+      "count": 0
+    },
+    {
+      "keyword": "원자력",
+      "count": 0
+    },
+    {
+      "keyword": "SMR",
+      "count": 0
+    },
+    {
+      "keyword": "양자",
+      "count": 0
     },
     {
       "keyword": "이차전지",
-      "count": 100
+      "count": 0
     },
     {
       "keyword": "리사이클링",
-      "count": 27
-    },
-    {
-      "keyword": "바이오",
-      "count": 37
-    },
-    {
-      "keyword": "에너지",
-      "count": 100
+      "count": 0
     },
     {
       "keyword": "디지털",
-      "count": 100
+      "count": 0
+    },
+    {
+      "keyword": "바이오",
+      "count": 0
+    },
+    {
+      "keyword": "에너지",
+      "count": 0
     }
   ]
 }
