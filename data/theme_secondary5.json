@@ -1,4 +1,34 @@
 {
-  "updated_at": "2025-10-23 18:58:26 (KST)",
-  "themes": []
+  "themes": [
+    {
+      "theme": "AI",
+      "count": 13,
+      "score": 13,
+      "sample_link": "https://news.google.com/rss/articles/CBMigAFBVV95cUxON3RNV1d4NkZCa2MwNVBDMDdUdllraGIzMEt3REZkbFlrQ0kzNUdodXdHZUl3QmNfUm0weS04bXBzMTh1NGJGS0pLaEdHd3d0cFdONlBSNG9jZjMzN2g1ZlJESWVmaW1CajRGeldUbk10V1I3cEFEeURsQzRwOGYzOQ?oc=5"
+    },
+    {
+      "theme": "조선",
+      "count": 2,
+      "score": 2,
+      "sample_link": "https://news.google.com/rss/articles/CBMia0FVX3lxTFB0U2xxZURXRjVTcDNpYlJORWltdnVjSnJVcG50Wl9ucDBoWEJ0Z242Q1JOemFTQXYxVzlTRHc3dV9VUVVsM08xUUdXbXN1cEMxZElIcmgtbTlsYXI5T0ZQRlplRmVaT1ZyY1VJ0gFuQVVfeXFMTVUyN2dqbm9XaUhPMElHcnIxSmF1UDA1VEYwWkFZRno3cUVrYklGeV9jZ3B2YTFvck94VmtZUC14bGt4WnNtWjJqSHVlYzM2VDZ4T21DNjR6UkR0UXpEajRWOUNiNDlQdkFXTTJXbHc?oc=5"
+    },
+    {
+      "theme": "반도체",
+      "count": 1,
+      "score": 1,
+      "sample_link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTFAyVVhGZzZ2OEg2X25RbTZzd3B4WTVHUmw1NEdkbGlidWU0aWpMZm5nOEFQNHdyUzBoMnpkcGVDSFBfSUxPNEZHY09zdm1YN0IzODFDag?oc=5"
+    },
+    {
+      "theme": "이차전지",
+      "count": 1,
+      "score": 1,
+      "sample_link": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE1IeFEycWtLSGxtLU5JekZQUXFmOXlqYnZYc1Q1RGo4Z2N1a2h4aFdPb0l1YUF0Q2h0MlV1b0trSldYbHBqMDY2Q0VMMU5CUVE?oc=5"
+    },
+    {
+      "theme": "바이오",
+      "count": 1,
+      "score": 1,
+      "sample_link": "https://news.google.com/rss/articles/CBMickFVX3lxTE8tblVyV1kxZjdBNWt3UlRYa0pSSzE2YmV2T3A5cWFqTVpmMDk1UUpVZ01VNnl0c2hpUTJ6eGl3Q3ZOeHpEenlwUzNKRURjWkUwczVyMGlvLVo3TTJad3N4OHBHb0U3YUd1WmNCZ2Vaa2s4dw?oc=5"
+    }
+  ]
 }

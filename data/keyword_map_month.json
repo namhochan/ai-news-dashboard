@@ -1,4 +1,32 @@
 {
-  "updated_at": "2025-10-23 18:58:26 (KST)",
-  "keywords": []
+  "keywords": [
+    {
+      "keyword": "ai",
+      "count": 10
+    },
+    {
+      "keyword": "조선",
+      "count": 2
+    },
+    {
+      "keyword": "인공지능",
+      "count": 2
+    },
+    {
+      "keyword": "반도체",
+      "count": 1
+    },
+    {
+      "keyword": "이차전지",
+      "count": 1
+    },
+    {
+      "keyword": "오픈ai",
+      "count": 1
+    },
+    {
+      "keyword": "신약",
+      "count": 1
+    }
+  ]
 }
