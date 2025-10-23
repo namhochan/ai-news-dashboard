@@ -1,95 +1,180 @@
-import os
-import json
-import datetime
-import pandas as pd
-from newsapi import NewsApiClient
+# scripts/update_dashboard.py
+import os, json, time, math
+from datetime import datetime, timezone, timedelta
+from collections import Counter, defaultdict
 
-# ✅ 환경 변수 (GitHub Secrets로 등록)
-NEWSAPI_KEY = os.getenv("810d72c58b114db5b10a7a4b4a196dce")
-TELEGRAM_BOT_TOKEN = os.getenv("AAEfuIvqm2jTBBxQpNZA351T2FHMYuG3Wrs")
-TELEGRAM_CHAT_ID = os.getenv("8202492756")
+import feedparser
+import yfinance as yf
+import requests
 
-# ✅ API 초기화
-newsapi = NewsApiClient(api_key=NEWSAPI_KEY)
-today = datetime.date.today()
-from_date = (today - datetime.timedelta(days=2)).isoformat()
+DATA_DIR = "data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# ✅ 주요 테마 / 종목 리스트
-themes = {
-    "AI 반도체": ["삼성전자", "SK하이닉스", "엘비세미콘", "티씨케이"],
-    "2차전지": ["엘앤에프", "에코프로비엠", "포스코퓨처엠", "천보"],
-    "로봇": ["레인보우로보틱스", "유진로봇", "로보스타", "휴림로봇"],
-    "바이오": ["셀트리온", "삼성바이오로직스", "HLB", "유한양행"]
+KST = timezone(timedelta(hours=9))
+
+# ----- 테마 & 종목 매핑(원하시면 여기만 수정) -----
+THEMES = {
+    "AI 반도체": {
+        "keywords": ["AI", "반도체", "HBM", "메모리", "GPU", "칩"],
+        "stocks": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"]
+    },
+    "로봇/스마트팩토리": {
+        "keywords": ["로봇", "스마트팩토리", "자동화"],
+        "stocks": ["유진로봇", "휴림로봇", "한라캐스트"]
+    },
+    "조선/해양플랜트": {
+        "keywords": ["조선", "LNG", "해양", "선박"],
+        "stocks": ["HD현대중공업", "대우조선해양", "대한조선", "삼성중공업"]
+    },
+    "원전/SMR": {
+        "keywords": ["원전", "원자력", "SMR", "원전수출"],
+        "stocks": ["두산에너빌리티", "보성파워텍", "한신기계"]
+    },
+    "2차전지 리사이클링": {
+        "keywords": ["이차전지", "2차전지", "리사이클링", "양극재", "음극재"],
+        "stocks": ["성일하이텍", "새빗켐", "에코프로"]
+    },
 }
 
-# ✅ 뉴스 수집
-def fetch_news(query):
+# ----- 유틸 -----
+def save_json(path, obj):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+def now_kst_str():
+    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+
+def try_float(x):
     try:
-        articles = newsapi.get_everything(
-            q=query,
-            language="ko",
-            from_param=from_date,
-            sort_by="publishedAt",
-            page_size=10
-        )
-        return [
-            {"title": a["title"], "url": a["url"], "source": a["source"]["name"]}
-            for a in articles.get("articles", [])
-        ]
-    except Exception as e:
-        print(f"❌ Error fetching news for {query}: {e}")
-        return []
+        return float(x)
+    except:
+        return None
 
-# ✅ 전체 뉴스 수집 (Top 10)
-headline_query = "AI OR 반도체 OR 주식 OR 산업 OR 경제 OR 삼성전자 OR SK하이닉스"
-headlines = fetch_news(headline_query)
-os.makedirs("data", exist_ok=True)
-with open("data/news_top10.json", "w", encoding="utf-8") as f:
-    json.dump(headlines, f, ensure_ascii=False, indent=2)
+# ----- 지수/환율 (Yahoo Finance) -----
+def fetch_market():
+    # KOSPI: ^KS11 / KOSDAQ: ^KQ11(간혹 ^KQ11이 없을 수 있어 대체 로직)
+    tickers = {
+        "kospi": "^KS11",
+        "kosdaq": "^KQ11",
+        "usdkor": "KRW=X",  # USDKRW (1 USD = ? KRW)
+    }
+    out = {"updated_at": now_kst_str(), "kospi": None, "kosdaq": None, "usdkor": None}
 
-# ✅ 테마별 키워드맵 + 종목별 최신뉴스 2건
-theme_summary = []
-theme_news_archive = {}
+    for key, t in tickers.items():
+        try:
+            y = yf.Ticker(t)
+            px = y.fast_info.last_price if hasattr(y, "fast_info") else None
+            if px is None:
+                hist = y.history(period="1d")
+                px = hist["Close"].iloc[-1] if not hist.empty else None
+            out[key] = float(px) if px is not None and not math.isnan(px) else None
+        except Exception:
+            out[key] = None
 
-for theme, stocks in themes.items():
-    theme_keywords = ", ".join(stocks)
-    total_news = []
-    for stock in stocks:
-        news_list = fetch_news(stock)
-        total_news.extend(news_list[:2])  # 종목당 2건만
-        theme_news_archive[stock] = news_list[:2]
-    theme_summary.append({
-        "theme": theme,
-        "count": len(total_news),
-        "keywords": theme_keywords
-    })
+    # KOSDAQ 대체: ^KOSDAQ / 200지수 등으로 실패시 보정
+    if out["kosdaq"] is None:
+        for alt in ["^KOSDAQ", "KQ11.KS"]:
+            try:
+                y = yf.Ticker(alt)
+                hist = y.history(period="1d")
+                px = hist["Close"].iloc[-1] if not hist.empty else None
+                if px:
+                    out["kosdaq"] = float(px)
+                    break
+            except Exception:
+                pass
 
-# ✅ 저장 (테마 Top5)
-theme_summary_sorted = sorted(theme_summary, key=lambda x: x["count"], reverse=True)
-with open("data/theme_top5.json", "w", encoding="utf-8") as f:
-    json.dump(theme_summary_sorted[:5], f, ensure_ascii=False, indent=2)
+    save_json(os.path.join(DATA_DIR, "market_today.json"), out)
+    return out
 
-# ✅ 저장 (종목별 뉴스 아카이브)
-with open("data/theme_stock_news.json", "w", encoding="utf-8") as f:
-    json.dump(theme_news_archive, f, ensure_ascii=False, indent=2)
+# ----- 뉴스 수집 (Google News RSS) -----
+def google_news_search(query_ko, max_items=20):
+    # 예: https://news.google.com/rss/search?q=반도체+주식&hl=ko&gl=KR&ceid=KR:ko
+    q = requests.utils.quote(query_ko)
+    url = f"https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
+    feed = feedparser.parse(url)
+    items = []
+    for e in feed.entries[:max_items]:
+        title = e.title
+        link = getattr(e, "link", None)
+        published = getattr(e, "published", "")
+        items.append({"title": title, "url": link, "published": published})
+    return items
 
-# ✅ 월간 키워드맵 (간단 빈도 카운트)
-keyword_df = pd.DataFrame([
-    {"keyword": kw, "count": t["count"]}
-    for t in theme_summary_sorted[:5]
-    for kw in t["keywords"].split(", ")
-])
-keyword_df.to_csv("data/monthly_keywordmap.csv", index=False, encoding="utf-8-sig")
+def build_theme_insights():
+    # 테마별로 키워드 검색 → 헤드라인 모으기
+    theme_data = []
+    keyword_counter = Counter()
+    per_stock_archive = defaultdict(list)  # 종목 → 최근 2건
 
-# ✅ 텔레그램 알림 전송
-if TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID:
-    import requests
-    msg = f"✅ AI 뉴스리포트 자동 업데이트 완료 ({datetime.datetime.now().strftime('%Y-%m-%d %H:%M')})\n"
-    msg += f"Top 뉴스: {headlines[0]['title'] if headlines else '없음'}"
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    requests.post(url, data={"chat_id": TELEGRAM_CHAT_ID, "text": msg})
-    print("📨 Telegram notification sent.")
-else:
-    print("⚠️ TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID not set")
+    for theme, cfg in THEMES.items():
+        all_items = []
+        for kw in cfg["keywords"]:
+            items = google_news_search(kw, max_items=10)
+            all_items.extend(items)
+            # 키워드맵 집계
+            keyword_counter[kw] += len(items)
 
-print("✅ Dashboard data updated successfully.")
+        # 테마 설명(간단): 상위 키워드/기사 수 기반
+        total_hits = len(all_items)
+        desc = f"{theme} 관련 뉴스 빈도 {total_hits}건. 핵심 키워드: {', '.join(cfg['keywords'][:3])}."
+
+        # 대표 뉴스 3건
+        top_samples = all_items[:3]
+
+        # 종목별 최신 2건
+        for stock in cfg["stocks"]:
+            s_items = google_news_search(stock, max_items=5)
+            per_stock_archive[stock] = s_items[:2]
+
+        theme_data.append({
+            "theme": theme,
+            "desc": desc,
+            "stocks": cfg["stocks"],
+            "score": total_hits,
+            "top_news": top_samples
+        })
+
+    # 상위 5 테마
+    theme_data.sort(key=lambda x: x["score"], reverse=True)
+    top5 = theme_data[:5]
+
+    # 저장
+    save_json(os.path.join(DATA_DIR, "theme_top5.json"), top5)
+
+    # 키워드맵 (이번 달 기준 단순 누적)
+    monthly_keywords = [{"keyword": k, "count": v} for k, v in keyword_counter.most_common(40)]
+    save_json(os.path.join(DATA_DIR, "keyword_map.json"), monthly_keywords)
+
+    # 종목별 전 뉴스 2건(아카이브)
+    archive = {k: v for k, v in per_stock_archive.items()}
+    save_json(os.path.join(DATA_DIR, "stock_archive.json"), archive)
+
+    return top5, monthly_keywords, archive
+
+# ----- 텔레그램 알림(선택) -----
+def send_telegram(text):
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    try:
+        requests.post(url, json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True})
+    except Exception:
+        pass
+
+def main():
+    mkt = fetch_market()
+    top5, kwmap, arc = build_theme_insights()
+
+    # 간단 알림
+    send_telegram(
+        "[AI 뉴스 대시보드] 데이터 갱신 완료\n"
+        f"- 시간: {now_kst_str()}\n"
+        f"- KOSPI: {mkt.get('kospi')} / KOSDAQ: {mkt.get('kosdaq')} / USD/KRW: {mkt.get('usdkor')}\n"
+        f"- TOP 테마: {', '.join([t['theme'] for t in top5])}"
+    )
+
+if __name__ == "__main__":
+    main()
