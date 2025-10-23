@@ -4,5 +4,5 @@ numpy>=1.26
 requests>=2.32
 feedparser>=6.0.1
 beautifulsoup4>=4.12
-yfinance>=0.2.43
+yfinance>=0.2.44
 python-dateutil>=2.9
