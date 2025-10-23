@@ -1,7 +1,8 @@
-streamlit
-plotly
-pandas
-feedparser
-yfinance
-pytz
-beautifulsoup4
+streamlit>=1.38
+pandas>=2.2
+numpy>=1.26
+requests>=2.32
+feedparser>=6.0
+beautifulsoup4>=4.12
+yfinance>=0.2.43
+python-dateutil>=2.9
