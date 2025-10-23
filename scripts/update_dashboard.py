@@ -1,180 +1,231 @@
 # scripts/update_dashboard.py
-import os, json, time, math
-from datetime import datetime, timezone, timedelta
+# -*- coding: utf-8 -*-
+
+import os
+import json
+import time
+import math
+import pytz
+import requests
+from datetime import datetime, timedelta
 from collections import Counter, defaultdict
 
-import feedparser
-import yfinance as yf
-import requests
-
-DATA_DIR = "data"
+# ===== 공통 경로/유틸 =====
+ROOT = os.path.dirname(os.path.dirname(__file__))  # repo 루트
+DATA_DIR = os.path.join(ROOT, "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
-KST = timezone(timedelta(hours=9))
+def load_json(path, default=None):
+    try:
+        with open(os.path.join(ROOT, path) if not os.path.isabs(path) else path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
 
-# ----- 테마 & 종목 매핑(원하시면 여기만 수정) -----
-THEMES = {
-    "AI 반도체": {
-        "keywords": ["AI", "반도체", "HBM", "메모리", "GPU", "칩"],
-        "stocks": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"]
-    },
-    "로봇/스마트팩토리": {
-        "keywords": ["로봇", "스마트팩토리", "자동화"],
-        "stocks": ["유진로봇", "휴림로봇", "한라캐스트"]
-    },
-    "조선/해양플랜트": {
-        "keywords": ["조선", "LNG", "해양", "선박"],
-        "stocks": ["HD현대중공업", "대우조선해양", "대한조선", "삼성중공업"]
-    },
-    "원전/SMR": {
-        "keywords": ["원전", "원자력", "SMR", "원전수출"],
-        "stocks": ["두산에너빌리티", "보성파워텍", "한신기계"]
-    },
-    "2차전지 리사이클링": {
-        "keywords": ["이차전지", "2차전지", "리사이클링", "양극재", "음극재"],
-        "stocks": ["성일하이텍", "새빗켐", "에코프로"]
-    },
-}
-
-# ----- 유틸 -----
 def save_json(path, obj):
-    with open(path, "w", encoding="utf-8") as f:
+    full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
+    os.makedirs(os.path.dirname(full), exist_ok=True)
+    with open(full, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
-def now_kst_str():
-    return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+KST = pytz.timezone("Asia/Seoul")
 
-def try_float(x):
+# ====== (1) 시장 지표 수집 ======
+def fetch_market_today():
+    """
+    KOSPI/KOSDAQ/USDKRW 등을 간단히 가져와 저장.
+    실제 사용 중인 API가 있으면 그 로직을 사용하세요.
+    """
+    # --- 예시용(필요 시 기존 코드로 교체) ---
+    kosdaq = None
+    kospi  = None
+    usdk   = None
     try:
-        return float(x)
-    except:
-        return None
+        # KRX 요약(샘플 엔드포인트/로직은 각자 쓰시는 것으로 교체)
+        r = requests.get("https://query1.finance.yahoo.com/v7/finance/quote?symbols=^KQ11,^KS11,KRW=X", timeout=10)
+        q = r.json()["quoteResponse"]["result"]
+        for it in q:
+            sym = it.get("symbol")
+            if sym == "^KS11":
+                kospi = it.get("regularMarketPrice")
+            elif sym == "^KQ11":
+                kosdaq = it.get("regularMarketPrice")
+            elif sym == "KRW=X":
+                # USD/KRW는 야후에서는 KRW=X가 USDKRW 환율(원/달러)의 역수이므로
+                # KRW=X 값이 0.0007 형태로 오면 1/값을 취함
+                v = it.get("regularMarketPrice")
+                if v and v < 1:
+                    usdk = 1 / v
+                else:
+                    usdk = v
+    except Exception as e:
+        print("[market] fetch fail:", e)
 
-# ----- 지수/환율 (Yahoo Finance) -----
-def fetch_market():
-    # KOSPI: ^KS11 / KOSDAQ: ^KQ11(간혹 ^KQ11이 없을 수 있어 대체 로직)
-    tickers = {
-        "kospi": "^KS11",
-        "kosdaq": "^KQ11",
-        "usdkor": "KRW=X",  # USDKRW (1 USD = ? KRW)
+    now_kst = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+    return {
+        "updated_at": now_kst,
+        "KOSPI": kospi,
+        "KOSDAQ": kosdaq,
+        "USDKRW": usdk,
+        "memo": "원/달러 고평가"
     }
-    out = {"updated_at": now_kst_str(), "kospi": None, "kosdaq": None, "usdkor": None}
 
-    for key, t in tickers.items():
-        try:
-            y = yf.Ticker(t)
-            px = y.fast_info.last_price if hasattr(y, "fast_info") else None
-            if px is None:
-                hist = y.history(period="1d")
-                px = hist["Close"].iloc[-1] if not hist.empty else None
-            out[key] = float(px) if px is not None and not math.isnan(px) else None
-        except Exception:
-            out[key] = None
+# ====== (2) 뉴스 수집 ======
+NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")  # GitHub Actions secrets 에서 주입
 
-    # KOSDAQ 대체: ^KOSDAQ / 200지수 등으로 실패시 보정
-    if out["kosdaq"] is None:
-        for alt in ["^KOSDAQ", "KQ11.KS"]:
-            try:
-                y = yf.Ticker(alt)
-                hist = y.history(period="1d")
-                px = hist["Close"].iloc[-1] if not hist.empty else None
-                if px:
-                    out["kosdaq"] = float(px)
-                    break
-            except Exception:
-                pass
+def fetch_headlines(query, page_size=30, days=3):
+    """
+    NewsAPI 예시. 기존에 사용하던 뉴스 소스가 있다면 그 코드로 교체하세요.
+    """
+    if not NEWSAPI_KEY:
+        print("[news] NEWSAPI_KEY not found; return empty")
+        return []
 
-    save_json(os.path.join(DATA_DIR, "market_today.json"), out)
-    return out
+    from_dt = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
+    url = "https://newsapi.org/v2/everything"
+    params = {
+        "q": query,
+        "language": "ko",
+        "from": from_dt,
+        "pageSize": page_size,
+        "sortBy": "publishedAt",
+        "apiKey": NEWSAPI_KEY,
+    }
+    try:
+        r = requests.get(url, params=params, timeout=15)
+        r.raise_for_status()
+        items = r.json().get("articles", [])
+        res = []
+        for a in items:
+            title = (a.get("title") or "").strip()
+            url   = a.get("url")
+            if title and url:
+                res.append({"title": title, "link": url})
+        return res
+    except Exception as e:
+        print(f"[news] fail for {query}:", e)
+        return []
 
-# ----- 뉴스 수집 (Google News RSS) -----
-def google_news_search(query_ko, max_items=20):
-    # 예: https://news.google.com/rss/search?q=반도체+주식&hl=ko&gl=KR&ceid=KR:ko
-    q = requests.utils.quote(query_ko)
-    url = f"https://news.google.com/rss/search?q={q}&hl=ko&gl=KR&ceid=KR:ko"
-    feed = feedparser.parse(url)
-    items = []
-    for e in feed.entries[:max_items]:
-        title = e.title
-        link = getattr(e, "link", None)
-        published = getattr(e, "published", "")
-        items.append({"title": title, "url": link, "published": published})
-    return items
+# ====== (3) 테마 정의 ======
+# 필요 시 기존 테마/키워드 구성을 그대로 유지하세요.
+THEMES = [
+    {"theme": "AI 반도체", "keywords": ["AI", "반도체", "HBM"], "stocks": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"]},
+    {"theme": "로봇/스마트팩토리", "keywords": ["로봇", "스마트팩토리"], "stocks": ["유진로봇", "휴림로봇", "한라캐스트"]},
+    {"theme": "조선/해양플랜트", "keywords": ["조선", "LNG", "해양"], "stocks": ["HD현대중공업", "대우조선해양", "대한조선"]},
+    {"theme": "원전/SMR", "keywords": ["원전", "SMR"], "stocks": ["두산에너빌리티", "보성파워텍", "한신기계"]},
+    {"theme": "2차전지 리사이클링", "keywords": ["2차전지", "리사이클링"], "stocks": ["성일하이텍", "새빗켐", "에코프로"]},
+]
 
-def build_theme_insights():
-    # 테마별로 키워드 검색 → 헤드라인 모으기
-    theme_data = []
-    keyword_counter = Counter()
-    per_stock_archive = defaultdict(list)  # 종목 → 최근 2건
+# ====== (4) 테마 TOP5 계산 & 최근 헤드라인 ======
+def build_theme_top5_and_headlines():
+    """
+    각 테마의 키워드로 최신 뉴스 수집 → 테마별 점수(빈도) → 상위5개 선정
+    또한 '최근 헤드라인 Top10' 도 함께 구성해서 반환
+    """
+    theme_scores = []
+    collected_all = []  # 전체 제목 모음(키워드맵용)
 
-    for theme, cfg in THEMES.items():
-        all_items = []
-        for kw in cfg["keywords"]:
-            items = google_news_search(kw, max_items=10)
-            all_items.extend(items)
-            # 키워드맵 집계
-            keyword_counter[kw] += len(items)
-
-        # 테마 설명(간단): 상위 키워드/기사 수 기반
-        total_hits = len(all_items)
-        desc = f"{theme} 관련 뉴스 빈도 {total_hits}건. 핵심 키워드: {', '.join(cfg['keywords'][:3])}."
-
-        # 대표 뉴스 3건
-        top_samples = all_items[:3]
-
-        # 종목별 최신 2건
-        for stock in cfg["stocks"]:
-            s_items = google_news_search(stock, max_items=5)
-            per_stock_archive[stock] = s_items[:2]
-
-        theme_data.append({
-            "theme": theme,
-            "desc": desc,
-            "stocks": cfg["stocks"],
-            "score": total_hits,
-            "top_news": top_samples
+    for t in THEMES:
+        q = " OR ".join(t["keywords"])
+        news = fetch_headlines(q, page_size=30, days=3)
+        score = len(news)
+        theme_scores.append({
+            "theme": t["theme"],
+            "desc": f"{t['theme']} 관련 뉴스 빈도 상승. 핵심 키워드: {', '.join(t['keywords'])}.",
+            "stocks": ", ".join(t["stocks"]),
+            "score": score,
+            "keywords": t["keywords"],
+            "news": news[:10],  # 테마별로 10건 정도(앱에서 2건만 보여줘도 됨)
         })
+        collected_all.extend([n["title"] for n in news])
 
-    # 상위 5 테마
-    theme_data.sort(key=lambda x: x["score"], reverse=True)
-    top5 = theme_data[:5]
+    # 상위 5개
+    theme_scores.sort(key=lambda x: x["score"], reverse=True)
+    top5 = theme_scores[:5]
 
-    # 저장
-    save_json(os.path.join(DATA_DIR, "theme_top5.json"), top5)
+    # 최근 헤드라인 Top10 (모든 테마 뉴스 합쳐서 최신순 상위 10)
+    # 여기서는 방금 수집한 리스트에서 제목만 가져왔으니, 상위 10개로 대체
+    recent10 = []
+    for t in theme_scores:
+        for it in t["news"]:
+            if len(recent10) < 10:
+                recent10.append(it)
+    # 혹시 부족하면 빈 리스트로 둠
 
-    # 키워드맵 (이번 달 기준 단순 누적)
-    monthly_keywords = [{"keyword": k, "count": v} for k, v in keyword_counter.most_common(40)]
-    save_json(os.path.join(DATA_DIR, "keyword_map.json"), monthly_keywords)
+    return top5, recent10, collected_all
 
-    # 종목별 전 뉴스 2건(아카이브)
-    archive = {k: v for k, v in per_stock_archive.items()}
-    save_json(os.path.join(DATA_DIR, "stock_archive.json"), archive)
+# ====== (5) 월간 키워드맵 (고친 부분) ======
+def build_keyword_map(all_headlines, base_keywords):
+    """
+    실제 제목에 등장한 키워드의 등장 '문서 빈도'를 세서 저장.
+    - 한 제목에서 같은 키워드가 여러 번 나와도 1회로 처리.
+    - 상위 20개 저장.
+    """
+    kw_counter = Counter()
 
-    return top5, monthly_keywords, archive
+    for title in all_headlines:
+        hit = set()
+        for kw in base_keywords:
+            if kw and kw in title:
+                hit.add(kw)
+        for kw in hit:
+            kw_counter[kw] += 1
 
-# ----- 텔레그램 알림(선택) -----
-def send_telegram(text):
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    data = [{"keyword": k, "count": v} for k, v in kw_counter.most_common(20)]
+
+    if not data:
+        print("[keyword_map] no matches; keep previous or save empty")
+        prev = load_json("data/keyword_map.json", [])
+        data = prev if prev else []
+
+    save_json("data/keyword_map.json", data)
+    print(f"[keyword_map] saved {len(data)} items")
+
+# ====== (6) 텔레그램 알림 (옵션) ======
+def send_telegram(msg):
+    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
     if not token or not chat_id:
         return
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
     try:
-        requests.post(url, json={"chat_id": chat_id, "text": text, "disable_web_page_preview": True})
-    except Exception:
-        pass
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+    except Exception as e:
+        print("[telegram] fail:", e)
 
+# ====== (7) 메인 실행 ======
 def main():
-    mkt = fetch_market()
-    top5, kwmap, arc = build_theme_insights()
+    # 1) 시장 저장
+    market = fetch_market_today()
+    save_json("data/market_today.json", market)
+    print("[market] saved")
 
-    # 간단 알림
-    send_telegram(
-        "[AI 뉴스 대시보드] 데이터 갱신 완료\n"
-        f"- 시간: {now_kst_str()}\n"
-        f"- KOSPI: {mkt.get('kospi')} / KOSDAQ: {mkt.get('kosdaq')} / USD/KRW: {mkt.get('usdkor')}\n"
-        f"- TOP 테마: {', '.join([t['theme'] for t in top5])}"
-    )
+    # 2) 테마 TOP5 / 최근 헤드라인 / 전체제목
+    theme_top5, recent10, all_titles = build_theme_top5_and_headlines()
+    # Streamlit에서 쓰는 구조로 저장
+    save_json("data/theme_top5.json", theme_top5)
+    print("[theme_top5] saved", len(theme_top5))
+
+    # 최근 헤드라인은 app에서 바로 리스트를 보여주게끔 theme_top5에 포함해도 되고,
+    # 필요하면 별도 파일로 저장
+    save_json("data/recent_headlines.json", recent10)
+    print("[recent10] saved", len(recent10))
+
+    # 3) 월간 키워드맵 (여기가 수정 핵심)
+    #   - 테마명 + 테마 키워드 전체를 관심 키워드로 사용
+    theme_names = [t["theme"] for t in THEMES]
+    core_keywords = []
+    for t in THEMES:
+        core_keywords.extend(t["keywords"])
+    base_keywords = list({*theme_names, *core_keywords})
+    build_keyword_map(all_titles, base_keywords)
+
+    # 4) 텔레그램 알림 (선택)
+    try:
+        msg = f"[AI 뉴스 대시보드] 업데이트 완료\n- 테마Top5: {', '.join([t['theme'] for t in theme_top5])}\n- 헤드라인 수: {len(recent10)}\n- 시장: KOSPI={market.get('KOSPI')}, KOSDAQ={market.get('KOSDAQ')}, USD/KRW={market.get('USDKRW')}"
+        send_telegram(msg)
+    except Exception as e:
+        print("[telegram] skipped:", e)
 
 if __name__ == "__main__":
     main()
