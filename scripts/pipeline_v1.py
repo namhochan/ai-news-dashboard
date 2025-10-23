@@ -100,3 +100,114 @@ def run():
 
 if __name__ == "__main__":
     run()
+    # ---------- [STEP 3] 테마별 종목 → 현재가 + 종목 뉴스 ----------
+import yfinance as yf
+import re
+
+STOCK_NEWS_DIR = os.path.join(DATA_DIR, "stock_news")
+os.makedirs(STOCK_NEWS_DIR, exist_ok=True)
+
+def load_json(path, default=None):
+    try:
+        return json.load(open(path, "r", encoding="utf-8"))
+    except Exception:
+        return default
+
+def get_quote_yf(ticker):
+    """
+    yfinance 현재가(+ 전일 대비 %) 안전하게 가져오기
+    """
+    try:
+        t = yf.Ticker(ticker)
+        info = t.fast_info
+        last = info.get("last_price")
+        prev = info.get("previous_close")
+        if last is None or prev is None:
+            # 백업: 최근 5일 일봉에서 종가 2개로 계산
+            df = t.history(period="5d", interval="1d")
+            if len(df) >= 2:
+                last = float(df["Close"].iloc[-1])
+                prev = float(df["Close"].iloc[-2])
+        if last is None or prev is None or prev == 0:
+            return {"price": None, "change_pct": None}
+        pct = (float(last) - float(prev)) / float(prev) * 100.0
+        return {"price": float(last), "change_pct": round(pct, 2)}
+    except Exception:
+        return {"price": None, "change_pct": None}
+
+def google_rss_company(name, days=5, max_items=6):
+    """
+    종목 뉴스 간단 수집: '종목명 주가 OR 뉴스' 검색어로 RSS
+    """
+    BASE_RSS = "https://news.google.com/rss/search"
+    q = f"{name} 주가 OR 뉴스"
+    params = {"q": q, "hl": "ko", "gl": "KR", "ceid": "KR:ko"}
+    r = requests.get(BASE_RSS, params=params, timeout=20)
+    feed = feedparser.parse(r.text)
+    now = datetime.now(KST)
+    out = []
+    for e in feed.entries[: max_items * 2]:
+        if hasattr(e, "published_parsed") and e.published_parsed:
+            pub = datetime(*e.published_parsed[:6], tzinfo=timezone.utc).astimezone(KST)
+        else:
+            pub = now
+        if pub >= now - timedelta(days=days):
+            out.append({
+                "title": e.title,
+                "link": e.link,
+                "published": pub.isoformat(timespec="seconds")
+            })
+        if len(out) >= max_items:
+            break
+    return out
+
+def step3_collect_stock_data(per_theme=5):
+    """
+    - theme_top5 + theme_secondary5 읽기
+    - theme_stock_map.json 기준으로 테마당 최대 per_theme 종목 선택
+    - 각 종목 현재가 + 최신 뉴스 수집 및 저장
+    """
+    theme_top = load_json(os.path.join(DATA_DIR, "theme_top5.json"), []) or []
+    theme_sec = load_json(os.path.join(DATA_DIR, "theme_secondary5.json"), []) or []
+    theme_map = load_json(os.path.join(DATA_DIR, "theme_stock_map.json"), {}) or {}
+
+    # 가격 결과 묶음
+    price_book = {}
+
+    def key_for_save(kor, ticker):
+        # 파일명에 못 쓰는 문자 정리
+        base = ticker if ticker and ticker != "—" else kor
+        return re.sub(r"[^A-Za-z0-9_.\-가-힣]", "_", base)
+
+    # 두 묶음 처리 함수
+    def process_theme_list(theme_list):
+        for t in theme_list:
+            theme = t.get("theme")
+            stocks = (theme_map.get(theme, {}).get("stocks", []) or [])[:per_theme]
+            for kor, ticker in stocks:
+                # 현재가
+                if ticker and ticker != "—":
+                    price_book[ticker] = get_quote_yf(ticker)
+                # 종목 뉴스
+                news = google_rss_company(kor, days=5, max_items=6)
+                save_key = key_for_save(kor, ticker)
+                json.dump(
+                    {"name": kor, "ticker": ticker, "news": news},
+                    open(os.path.join(STOCK_NEWS_DIR, f"{save_key}.json"), "w", encoding="utf-8"),
+                    ensure_ascii=False, indent=2
+                )
+                time.sleep(0.2)
+
+    process_theme_list(theme_top)
+    process_theme_list(theme_sec)
+
+    # 가격 저장
+    json.dump(price_book, open(os.path.join(DATA_DIR, "stock_prices.json"), "w", encoding="utf-8"),
+              ensure_ascii=False, indent=2)
+    return price_book
+
+# ---- main에 3단계 호출 추가 (파일 맨 아래 run() 다음) ----
+if __name__ == "__main__":
+    # 2단계까지 끝난 상태라면, 3단계만 따로 실행할 수도 있습니다:
+    # step3_collect_stock_data()
+    pass
