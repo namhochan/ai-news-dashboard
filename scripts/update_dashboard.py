@@ -1,8 +1,12 @@
-
 import json, os, re
 from datetime import datetime
 from collections import Counter
-import pytz, requests, feedparser, yfinance as yf
+from pathlib import Path
+
+import pytz
+import requests
+import feedparser
+import yfinance as yf
 
 ROOT = os.path.dirname(os.path.dirname(__file__))
 DATA = os.path.join(ROOT, "data")
@@ -13,7 +17,9 @@ def save_json(path, obj):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
-# ---------- 1) market ----------
+# ──────────────────────────────────────────────────────────────────
+# 1) 시장 지표
+# ──────────────────────────────────────────────────────────────────
 def fetch_market_today():
     tickers = {
         "KOSPI": "^KS11",
@@ -42,7 +48,9 @@ def fetch_market_today():
     out["comment"] = " · ".join(comment) if comment else "혼조"
     return out
 
-# ---------- 2) headlines (RSS) ----------
+# ──────────────────────────────────────────────────────────────────
+# 2) 뉴스 헤드라인 수집 (RSS)
+# ──────────────────────────────────────────────────────────────────
 NEWS_SOURCES = [
     "https://news.google.com/rss/search?q=AI%20%EB%B0%98%EB%8F%84%EC%B2%B4&hl=ko&gl=KR&ceid=KR:ko",
     "https://news.google.com/rss/search?q=%EB%A1%9C%EB%B4%87%20%EC%8A%A4%EB%A7%88%ED%8A%B8%ED%8C%A9%ED%86%A0%EB%A6%AC&hl=ko&gl=KR&ceid=KR:ko",
@@ -78,14 +86,18 @@ def build_keyword_map(headlines):
                 cnt[kw] += 1
     return dict(cnt.most_common(20))
 
-# ---------- 3) themes ----------
+# ──────────────────────────────────────────────────────────────────
+# 3) 테마/종목 정의 + 아카이브
+# ──────────────────────────────────────────────────────────────────
 THEME_DEF = [
     {"name":"AI 반도체", "keys":["AI","반도체","HBM"], "stocks":["삼성전자","하이닉스","엘비세미콘","티씨케이"]},
     {"name":"로봇/스마트팩토리", "keys":["로봇","스마트팩토리"], "stocks":["유진로봇","휴림로봇","한라캐스트"]},
-    {"name":"조선/해양플랜트", "keys":["조선","LNG","해양"], "stocks":["HD현대중공업","대한조선","삼성중공업"]},
-    {"name":"ESS/배터리", "keys":["ESS","배터리","전력"], "stocks":["씨아이에스","엠플러스","천보","코스모신소재"]},
-    {"name":"원전/SMR", "keys":["원전","SMR"], "stocks":["두산에너빌리티","보성파워텍","한신기계"]},
+    {"name":"조선/해양플랜트", "keys":["조선","LNG","해양"], "stocks":["HD현대중공업","대한조선","삼성중공업","한국카본","HSD엔진"]},
+    {"name":"ESS/배터리", "keys":["ESS","배터리","전력"], "stocks":["씨아이에스","엠플러스","천보","코스모신소재","에코프로비엠"]},
+    {"name":"원전/SMR", "keys":["원전","SMR"], "stocks":["두산에너빌리티","보성파워텍","한신기계","일진파워"]},
 ]
+THEME_STOCKS = {t["name"]: t["stocks"] for t in THEME_DEF}
+
 def make_theme_top5(kw_map):
     scored = []
     for t in THEME_DEF:
@@ -103,12 +115,69 @@ def make_theme_top5(kw_map):
         })
     return out
 
-# ---------- main ----------
+def slug(s: str) -> str:
+    s = re.sub(r"[^\w\-가-힣]", "_", s)
+    return re.sub(r"_+", "_", s).strip("_")
+
+def append_history_by_stock(headlines):
+    """제목에 종목명이 포함된 기사를 data/history/<종목>.json 에 누적 저장"""
+    hist_dir = Path(DATA) / "history"
+    hist_dir.mkdir(parents=True, exist_ok=True)
+
+    # 테마 인덱스 저장
+    save_json(os.path.join(DATA, "theme_index.json"), THEME_STOCKS)
+
+    # 종목별 기존 기록 로드
+    cache = {}
+    for stocks in THEME_STOCKS.values():
+        for stock in stocks:
+            fp = hist_dir / f"{slug(stock)}.json"
+            if fp.exists():
+                try:
+                    cache[stock] = json.loads(fp.read_text(encoding="utf-8"))
+                except:
+                    cache[stock] = []
+            else:
+                cache[stock] = []
+
+    # 누적
+    for h in headlines:
+        title = (h.get("title") or "").strip()
+        if not title:
+            continue
+        for theme, stocks in THEME_STOCKS.items():
+            for stock in stocks:
+                if stock in title:
+                    item = {
+                        "title": title,
+                        "url": h.get("url",""),
+                        "source": h.get("source",""),
+                        "published": h.get("published",""),
+                        "theme": theme,
+                    }
+                    arr = cache.setdefault(stock, [])
+                    if not any((x.get("title")==item["title"] and x.get("url")==item["url"]) for x in arr):
+                        arr.append(item)
+
+    # 최신순 정렬 + 상한 유지 + 저장
+    for stock, items in cache.items():
+        items.sort(key=lambda x: x.get("published",""), reverse=True)
+        items = items[:300]
+        (hist_dir / f"{slug(stock)}.json").write_text(
+            json.dumps(items, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
+# ──────────────────────────────────────────────────────────────────
+# main
+# ──────────────────────────────────────────────────────────────────
 def main():
     market = fetch_market_today()
     heads  = collect_headlines()
     kwmap  = build_keyword_map(heads)
     themes = make_theme_top5(kwmap)
+
+    # 종목 전뉴스 아카이브
+    append_history_by_stock(heads)
 
     os.makedirs(DATA, exist_ok=True)
     save_json(os.path.join(DATA, "market_today.json"), market)
