@@ -2,17 +2,12 @@ name: Update AI News Dashboard (hourly)
 
 on:
   schedule:
-    - cron: "0 * * * *"   # 매 정각, 1시간마다
+    - cron: "0 * * * *"   # 매 정각
   workflow_dispatch: {}    # 수동 실행 버튼
 
 jobs:
   update:
     runs-on: ubuntu-latest
-
-    concurrency:
-      group: ai-news-dashboard-hourly
-      cancel-in-progress: false
-
     permissions:
       contents: write
 
@@ -25,15 +20,13 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           pip install yfinance feedparser requests pytz
 
       - name: Run updater
-        env:
-            NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}   # 선택(없어도 됨)
         run: python scripts/update_dashboard.py
 
       - name: Commit & Push changes (only if changed)
@@ -43,7 +36,7 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "No data changes."
-          else
+          else:
             git commit -m "auto: hourly refresh"
             git push
           fi
