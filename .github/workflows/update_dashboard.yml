@@ -3,9 +3,8 @@ name: Update AI News Dashboard (hourly)
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 * * * *"   # 매시간
+    - cron: "0 * * * *"   # 매시간 정각 (UTC 기준 → 한국시간 +9h)
 
-# ✅ GitHub Actions 봇이 커밋/푸시할 권한 부여
 permissions:
   contents: write
 
@@ -17,8 +16,8 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}   # 기본 토큰 사용
-          persist-credentials: true            # (기본값이지만 명시)
+          token: ${{ secrets.GITHUB_TOKEN }}
+          persist-credentials: true
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -32,31 +31,24 @@ jobs:
 
       - name: Run data pipeline
         env:
-          # 필요한 경우 API 키/토큰들…
-          # NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
-          # TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          # TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           python scripts/update_dashboard.py
 
-      # ✅ 여기서 커밋/푸시
       - name: Commit & Push new data
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name  "github-actions[bot]"
+          git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git add -A
-          # 변경 없으면 커밋하지 않도록
           if git diff --staged --quiet; then
             echo "No changes to commit."
             exit 0
           fi
 
           git commit -m "auto: hourly update"
-
-          # 충돌 방지용 리베이스 후 푸시
           CURRENT_BRANCH="${GITHUB_REF_NAME:-main}"
           git pull --rebase origin "$CURRENT_BRANCH" || true
           git push origin HEAD:"$CURRENT_BRANCH"
