@@ -13,6 +13,12 @@
       "sample_link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTFAyVVhGZzZ2OEg2X25RbTZzd3B4WTVHUmw1NEdkbGlidWU0aWpMZm5nOEFQNHdyUzBoMnpkcGVDSFBfSUxPNEZHY09zdm1YN0IzODFDag?oc=5"
     },
     {
+      "theme": "조선",
+      "count": 3,
+      "score": 3,
+      "sample_link": "https://news.google.com/rss/articles/CBMia0FVX3lxTFB0U2xxZURXRjVTcDNpYlJORWltdnVjSnJVcG50Wl9ucDBoWEJ0Z242Q1JOemFTQXYxVzlTRHc3dV9VUVVsM08xUUdXbXN1cEMxZElIcmgtbTlsYXI5T0ZQRlplRmVaT1ZyY1VJ0gFuQVVfeXFMTVUyN2dqbm9XaUhPMElHcnIxSmF1UDA1VEYwWkFZRno3cUVrYklGeV9jZ3B2YTFvck94VmtZUC14bGt4WnNtWjJqSHVlYzM2VDZ4T21DNjR6UkR0UXpEajRWOUNiNDlQdkFXTTJXbHc?oc=5"
+    },
+    {
       "theme": "로봇",
       "count": 1,
       "score": 1,
@@ -23,12 +29,6 @@
       "count": 1,
       "score": 1,
       "sample_link": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE1IeFEycWtLSGxtLU5JekZQUXFmOXlqYnZYc1Q1RGo4Z2N1a2h4aFdPb0l1YUF0Q2h0MlV1b0trSldYbHBqMDY2Q0VMMU5CUVE?oc=5"
-    },
-    {
-      "theme": "조선",
-      "count": 1,
-      "score": 1,
-      "sample_link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxNREtrZUtrOVBIa1prSllmX1RwZHBGMnRxRVlXcGt1QmxyZjRuTzhNXzRoWEpHWlNkSnhTS3I1YWEyZFBRbEpPY3RLdFhRUnhzSEgtUmpyb3ZPbnlKbTI2TDh6bHBWX1lZNWhZX1JuNVQ5UVl6WHdXTjhIZW1xQXU5a1JCNjFmZDRF0gGcAUFVX3lxTE8yQ0l5WFNkWHFvSW00VElWcXlMVndDVzdOZDlTZUUwNFRBNHNYZFM4a1k1T2s5NGRQb0Z1c1NCd19SaGNWb0dJdEY4XzRrZHpkbHM1MkhHelN1ZnZsdVFfdUxNVEdSTHRqMWFEaDVFdGQyT3J2ZFA1QzlNYkZfU2pudDA4TkFrdldRMVdwRmhtcWtFOVF6ZlZLNHFqOA?oc=5"
     },
     {
       "theme": "바이오",

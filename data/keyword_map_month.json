@@ -2,14 +2,14 @@
   "keywords": [
     {
       "keyword": "ai",
-      "count": 7
+      "count": 8
+    },
+    {
+      "keyword": "조선",
+      "count": 3
     },
     {
       "keyword": "반도체",
-      "count": 2
-    },
-    {
-      "keyword": "인공지능",
       "count": 2
     },
     {
@@ -25,7 +25,7 @@
       "count": 1
     },
     {
-      "keyword": "조선",
+      "keyword": "인공지능",
       "count": 1
     },
     {
