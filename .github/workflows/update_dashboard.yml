@@ -3,10 +3,10 @@ name: Update AI News Dashboard (hourly)
 on:
   schedule:
     - cron: "0 * * * *"   # 매시 정각
-  workflow_dispatch: {}
+  workflow_dispatch:
 
 jobs:
-  update:
+  build:
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -14,47 +14,50 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Verify updater exists
-        run: |
-          test -f scripts/update_dashboard.py || (echo "ERROR: scripts/update_dashboard.py not found" && exit 1)
-
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
           python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
-          pip install yfinance feedparser requests pytz plotly pandas
+          pip install -r requirements.txt
 
-      - name: Run updater
-        run: python scripts/update_dashboard.py
-
-      - name: Ensure data files exist
+      - name: Update data files
+        env:
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}   # 선택(없어도 작동)
         run: |
-          mkdir -p data
-          [ -f data/market_today.json ] || echo "{}" > data/market_today.json
-          [ -f data/headlines.json ] || echo "[]" > data/headlines.json
-          [ -f data/keyword_map.json ] || echo "{}" > data/keyword_map.json
-          [ -f data/theme_top5.json ] || echo "[]" > data/theme_top5.json
+          python scripts/update_dashboard.py
 
-      - name: Pull to avoid conflicts
+      - name: Commit & push data
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git pull --rebase || true
-
-      - name: Commit & Push if changed
-        run: |
-          git add -A
-          if git diff --cached --quiet; then
-            echo "No data changes."
-          else
-            git commit -m "auto: hourly refresh"
+          git add data/*.json
+          if git commit -m "auto: hourly refresh"; then
             git push
+          else
+            echo "No changes to commit."
           fi
+
+      - name: Build Telegram message
+        id: msg
+        run: |
+          python scripts/update_dashboard.py --summary-only > msg.txt
+          echo "text<<EOF" >> $GITHUB_OUTPUT
+          cat msg.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Send Telegram Alert
+        if: ${{ secrets.TELEGRAM_BOT_TOKEN != '' && secrets.TELEGRAM_CHAT_ID != '' }}
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT:  ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          set -e
+          # 줄바꿈/특수문자 처리 위해 JSON 전송
+          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -H "Content-Type: application/json" \
+            -d "{\"chat_id\":\"${TG_CHAT}\",\"text\":\"${{ steps.msg.outputs.text }}\",\"parse_mode\":\"Markdown\"}"
