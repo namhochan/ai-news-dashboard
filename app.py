@@ -388,3 +388,91 @@ else:
                 else:
                     st.markdown(f"**{name}**<br>-<br><small>{ticker}</small>", unsafe_allow_html=True)
         st.divider()
+# =====================================
+# 🧠 1단계: AI 뉴스 요약엔진 (핵심 요약/감정/키워드)
+# =====================================
+import re
+from collections import Counter
+import numpy as np
+
+st.divider()
+st.markdown("## 🧠 AI 뉴스 요약엔진")
+
+def extract_keywords(texts, topn=10):
+    """가장 많이 등장하는 단어 기반 키워드 추출"""
+    words = []
+    for t in texts:
+        t = re.sub(r"[^가-힣A-Za-z0-9\s]", " ", t)
+        words.extend([w for w in t.split() if len(w) >= 2])
+    counter = Counter(words)
+    return [w for w, _ in counter.most_common(topn)]
+
+def summarize_news(news_list, n_sent=3):
+    """뉴스 내용 중 핵심 문장 n개 추출"""
+    texts = [n.get("title","") + " " + n.get("desc","") for n in news_list]
+    if not texts:
+        return []
+    full_text = " ".join(texts)
+    sentences = re.split(r'[.!?]\s+', full_text)
+    sentences = [s for s in sentences if len(s.strip()) > 10]
+    scores = {s: sum(word in full_text for word in s.split()) for s in sentences}
+    ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    return [s for s, _ in ranked[:n_sent]]
+
+# 전체 뉴스 요약 실행
+titles = [n["title"] for cat in CATEGORIES for n in fetch_category_news(cat, 3, 100)]
+keywords = extract_keywords(titles, topn=10)
+summary = summarize_news(all_news_3days, n_sent=3)
+
+st.markdown(f"### 📌 핵심 키워드 TOP10")
+st.write(", ".join(keywords))
+st.markdown("### 📰 핵심 요약문")
+for s in summary:
+    st.markdown(f"- {s.strip()}")
+
+# =====================================
+# 📊 2단계: 테마별 상승 확률 예측 (AI 리스크레벨 + 테마강도)
+# =====================================
+st.divider()
+st.markdown("## 📊 AI 상승 확률 예측 리포트")
+
+def calc_theme_strength(count, avg_delta):
+    """테마강도: 뉴스빈도(0~1) + 평균등락(0~1)"""
+    freq_score = min(count / 20, 1.0)
+    price_score = min(max((avg_delta + 5) / 10, 0), 1.0)
+    total = (freq_score * 0.6 + price_score * 0.4) * 5
+    return round(total, 1)
+
+def calc_risk_level(avg_delta):
+    """AI 리스크 레벨 (1~5, 하락폭 클수록 높음)"""
+    if avg_delta >= 3: return 1
+    if avg_delta >= 1: return 2
+    if avg_delta >= -1: return 3
+    if avg_delta >= -3: return 4
+    return 5
+
+report_rows = []
+for tr in theme_rows[:5]:
+    theme = tr["theme"]
+    stocks = THEME_STOCKS.get(theme, [])
+    deltas = []
+    for _, ticker in stocks:
+        try:
+            last, prev = fetch_quote(ticker)
+            if last and prev:
+                deltas.append((last - prev) / prev * 100)
+        except Exception:
+            pass
+    avg_delta = np.mean(deltas) if deltas else 0
+    theme_strength = calc_theme_strength(tr["count"], avg_delta)
+    risk_level = calc_risk_level(avg_delta)
+    report_rows.append({
+        "테마": theme,
+        "뉴스빈도": tr["count"],
+        "평균등락(%)": round(avg_delta, 2),
+        "테마강도(1~5)": theme_strength,
+        "리스크레벨(1~5)": risk_level,
+    })
+
+st.dataframe(report_rows, use_container_width=True, hide_index=True)
+st.caption("※ 테마강도↑ = 뉴스 + 가격이 모두 활발한 상태 / 리스크레벨↑ = 변동성·하락 가능성 높음")
