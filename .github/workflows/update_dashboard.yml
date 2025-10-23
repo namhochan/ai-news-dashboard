@@ -1,73 +1,40 @@
 name: Update AI News Dashboard (hourly)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch: {}
   schedule:
-    - cron: "0 * * * *"  # UTC 매 정각
+    # 매 시간 0분 (UTC) -> 한국시간(KST) 기준 매시 정각+9
+    - cron: "0 * * * *"
 
-# git push 권한 부여
 permissions:
   contents: write
 
 jobs:
   update:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout repository (full, keep credentials)
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0              # 얕은 히스토리로 인한 push 에러 방지
-          persist-credentials: true   # GITHUB_TOKEN 유지
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.10"
+          python-version: "3.11"
 
-      - name: Install dependencies
+      - name: Install deps
         run: |
+          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run update script
+      - name: Run updater
         env:
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python scripts/update_dashboard.py
 
-      - name: Prepare git (identity & safety)
-        run: |
-          git config --global user.name  "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
-          # 최신 원격 반영(충돌 방지)
-          git pull --rebase origin ${{ github.ref_name }} || true
-
-      - name: Commit and push changes (only if changed)
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN || github.token }}
-        run: |
-          mkdir -p data
-          CHANGED=$(git status --porcelain data || true)
-          if [ -n "$CHANGED" ]; then
-            git add data/*.json
-            git commit -m "auto: hourly refresh"
-            # 충돌 시 한 번 더 리베이스 후 푸시 재시도
-            git push origin ${{ github.ref_name }} || (git pull --rebase && git push origin ${{ github.ref_name }})
-          else
-            echo "No changes to commit"
-          fi
-
-      - name: Send Telegram notification
-        if: always()
-        env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
-          STATUS="${{ job.status }}"
-          MSG="[$STATUS] AI 대시보드 업데이트: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
-            -d chat_id="${TELEGRAM_CHAT_ID}" \
-            -d text="$MSG" >/dev/null 2>&1 || true
+      - name: Commit & Push updated data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "auto: hourly refresh"
+          file_pattern: data/*.json
