@@ -43,13 +43,6 @@ jobs:
           [ -f data/keyword_map.json ] || echo "{}" > data/keyword_map.json
           [ -f data/theme_top5.json ] || echo "[]" > data/theme_top5.json
 
-      - name: Show data snapshot
-        run: |
-          echo "== data =="
-          ls -al data
-          echo "---- market_today.json ----"
-          tail -n +1 data/market_today.json || true
-
       - name: Pull to avoid conflicts
         run: |
           git config user.name "github-actions[bot]"
