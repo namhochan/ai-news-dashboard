@@ -1,14 +1,13 @@
-
 # -*- coding: utf-8 -*-
 """
-AI 뉴스리포트 – 풀버전 (오류수정/최적화)
-- 지수/환율/원자재 티커바(자동 스크롤)
-- 최신 뉴스(3일) 크롤링 + 페이지
-- 테마 관리자(키워드/종목 UI 저장: themes.json + (선택) GitHub 커밋)
-- 뉴스+가격 하이브리드 테마 감지
-- 대표종목 시세 카드, AI 요약/키워드
-- 테마 강도 리포트, 유망 종목 Top5
-- 3일 예측(로지스틱)
+AI 뉴스리포트 – 개선 풀버전
+- 💥 카테고리 클릭 에러 해결 (세션 상태/위젯 key/안정 인덱싱)
+- 📰 뉴스 표시 모드: '제목만' 또는 '간략(제목+요약)' 토글
+- 🔗 뉴스기반 테마요약: sample_link를 클릭 가능한 href로 표시
+- 💹 대표 종목 시세 UI 강화(카드형/호버/간격/가독성)
+- 🧾 '전체 요약문 보기' 가독성 개선(행간/글머리/폰트톤)
+- 📌 우측 고정 퀵 메뉴바(해당 섹션으로 바로 스크롤 이동)
+- 기존 기능(티커바/테마강도/유망Top5/3일예측/테마관리자) 유지
 """
 
 import math, re, json, base64
@@ -28,12 +27,72 @@ from sklearn.linear_model import LogisticRegression
 
 KST = ZoneInfo("Asia/Seoul")
 
-# =========================================
-# 기본 설정
-# =========================================
+# =========================
+# 페이지/글로벌 스타일
+# =========================
 st.set_page_config(page_title="AI 뉴스리포트 – 자동 테마·시세 예측", layout="wide")
-st.markdown(f"<small>업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}</small>", unsafe_allow_html=True)
 
+GLOBAL_CSS = """
+<style>
+/* 본문 가독성 */
+.block-container { padding-top: 1.2rem; padding-bottom: 3rem; }
+h2, h3 { letter-spacing: -0.3px; }
+
+/* 링크 톤 */
+a, a:visited { color: #7aa2ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* 우측 퀵메뉴 바 */
+.quick-nav {
+  position: fixed; right: 18px; top: 96px; z-index: 9999;
+  width: 240px; max-height: 80vh; overflow:auto;
+  background:#0f1420; border:1px solid #2b3a55; border-radius: 12px; padding: 10px 12px;
+  box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+}
+.quick-nav h4 { margin: 6px 6px 10px; font-size: 0.95rem; color:#cbd5e1 }
+.quick-nav a {
+  display:block; padding:8px 10px; margin:6px;
+  font-size:0.9rem; color:#9fb3c8; border-radius:8px; border:1px solid #223050;
+  background:#0b1220;
+}
+.quick-nav a:hover { background:#0f1a2c; border-color:#2a3b5e; color:#cfe3ff }
+
+/* 티커바 */
+.ticker-wrap{overflow:hidden;width:100%;border:1px solid #263042;border-radius:10px;background:#0f1420}
+.ticker-track{display:flex;gap:16px;align-items:center;width:max-content;will-change:transform;animation:ticker-scroll var(--speed,30s) linear infinite}
+@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
+.badge{display:inline-flex;align-items:center;gap:8px;background:#0f1420;border:1px solid #2b3a55;color:#c7d2fe;padding:6px 10px;border-radius:8px;font-weight:700;white-space:nowrap}
+.badge .name{color:#9fb3c8;font-weight:600}
+.badge .up{color:#e66}.badge .down{color:#6aa2ff}.sep{color:#44526b;padding:0 6px}
+
+/* 대표 종목 카드 */
+.card-grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); }
+.stock-card {
+  border:1px solid #22324a; background:#0f1420; border-radius:14px; padding:10px 12px;
+  transition: transform .08s ease, border-color .08s ease, background .08s ease;
+}
+.stock-card:hover { transform: translateY(-2px); border-color:#2d456a; background:#111a2a; }
+.stock-card .nm { font-weight:700; }
+.stock-card .ticker { color:#90a4bf; font-size:0.82rem;}
+.stock-card .px { font-size:1.06rem; margin-top:4px; }
+.stock-card .up { color:#d93025 }   /* 빨강 */
+.stock-card .down { color:#1a73e8 } /* 파랑 */
+.stock-card .flat { color:#9aa0a6 }
+
+/* 요약 가독성 */
+.readable p, .readable li { line-height: 1.55; color:#cdd6e4; }
+.readable ul { margin:0 0 0.2rem 0.9rem; }
+
+/* 작은 캡션 */
+.small-cap { color:#9aa0a6; font-size:0.88rem; }
+</style>
+"""
+st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
+st.markdown(f"<small class='small-cap'>업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}</small>", unsafe_allow_html=True)
+
+# =========================
+# 유틸
+# =========================
 def fmt_number(v, d=2):
     try:
         if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
@@ -50,9 +109,19 @@ def fmt_percent(v):
     except Exception:
         return "-"
 
-# =========================================
-# 테마 저장/로드 (동적 설정)
-# =========================================
+def valid_prices(last, prev):
+    if last is None or prev in (None, 0):
+        return False
+    try:
+        if isinstance(last, float) and (math.isnan(last) or math.isinf(last)): return False
+        if isinstance(prev, float) and (math.isnan(prev) or math.isinf(prev)): return False
+    except Exception:
+        pass
+    return True
+
+# =========================
+# 테마 설정 저장/로드
+# =========================
 THEME_STORE_PATH = Path("themes.json")
 
 DEFAULT_THEME_CFG = {
@@ -72,31 +141,6 @@ DEFAULT_THEME_CFG = {
             {"name":"리노공업","ticker":"058470.KQ"},
         ],
     },
-    "로봇": {
-        "keywords": ["로봇","자율주행","협동로봇","amr","로보틱스"],
-        "stocks": [
-            {"name":"레인보우로보틱스","ticker":"277810.KQ"},
-            {"name":"유진로봇","ticker":"056080.KQ"},
-            {"name":"티로보틱스","ticker":"117730.KQ"},
-            {"name":"로보스타","ticker":"090360.KQ"},
-        ],
-    },
-    "이차전지": {
-        "keywords": ["배터리","이차전지","전고체","양극재","음극재","lfp"],  # lfp로 수정
-        "stocks": [
-            {"name":"LG에너지솔루션","ticker":"373220.KS"},
-            {"name":"포스코퓨처엠","ticker":"003670.KS"},
-            {"name":"에코프로","ticker":"086520.KQ"},
-        ],
-    },
-    "에너지": {
-        "keywords": ["에너지","정유","전력","태양광","풍력","가스"],
-        "stocks": [
-            {"name":"한국전력","ticker":"015760.KS"},
-            {"name":"두산에너빌리티","ticker":"034020.KS"},
-            {"name":"한화솔루션","ticker":"009830.KS"},
-        ],
-    },
     "전력": {
         "keywords": ["전력","송전","배전","송배전","전력망","hvdc","한국전력","한전kps","한전기술","전선","케이블"],
         "stocks": [
@@ -105,6 +149,14 @@ DEFAULT_THEME_CFG = {
             {"name":"한전기술","ticker":"052690.KS"},
             {"name":"대한전선","ticker":"001440.KS"},
             {"name":"LS ELECTRIC","ticker":"010120.KS"},
+        ],
+    },
+    "에너지": {
+        "keywords": ["에너지","정유","전력","태양광","풍력","가스"],
+        "stocks": [
+            {"name":"두산에너빌리티","ticker":"034020.KS"},
+            {"name":"한화솔루션","ticker":"009830.KS"},
+            {"name":"GS","ticker":"078930.KS"},
         ],
     },
     "조선": {
@@ -123,6 +175,14 @@ DEFAULT_THEME_CFG = {
             {"name":"우진","ticker":"105840.KQ"},
             {"name":"한전KPS","ticker":"051600.KS"},
             {"name":"보성파워텍","ticker":"006910.KQ"},
+        ],
+    },
+    "이차전지": {
+        "keywords": ["배터리","이차전지","전고체","양극재","음극재","lfp"],
+        "stocks": [
+            {"name":"LG에너지솔루션","ticker":"373220.KS"},
+            {"name":"포스코퓨처엠","ticker":"003670.KS"},
+            {"name":"에코프로","ticker":"086520.KQ"},
         ],
     },
     "바이오": {
@@ -148,14 +208,13 @@ def save_theme_config(cfg: dict):
     THEME_STORE_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
 def push_to_github_file(cfg: dict) -> bool:
-    """(선택) Secrets에 토큰 정보가 있으면 themes.json을 GitHub에 커밋"""
     try:
         token = st.secrets.get("GITHUB_TOKEN")
         repo  = st.secrets.get("THEME_REPO")
         path  = st.secrets.get("THEME_PATH", "themes.json")
         if not token or not repo:
             return False
-        import requests  # requirements.txt에 포함
+        import requests
         api = f"https://api.github.com/repos/{repo}/contents/{path}"
         r = requests.get(api, headers={"Authorization": f"token {token}"})
         sha = r.json().get("sha") if r.status_code == 200 else None
@@ -177,26 +236,10 @@ if "theme_cfg" not in st.session_state:
     st.session_state.theme_cfg = load_theme_config()
 THEME_KEYWORDS, THEME_STOCKS = cfg_to_maps(st.session_state.theme_cfg)
 
-# =========================================
-# 공통 방어/캐시
-# =========================================
-def valid_prices(last, prev):
-    if last is None or prev in (None, 0):
-        return False
-    try:
-        if isinstance(last, float) and (math.isnan(last) or math.isinf(last)):
-            return False
-        if isinstance(prev, float) and (math.isnan(prev) or math.isinf(prev)):
-            return False
-    except Exception:
-        pass
-    return True
-
-# =========================================
-# 시세 수집
-# =========================================
+# =========================
+# 시세/뉴스
+# =========================
 def fetch_quote(ticker: str):
-    """fast_info → 실패 시 7일/일봉 대체"""
     try:
         t = yf.Ticker(ticker)
         last, prev = getattr(t.fast_info, "last_price", None), getattr(t.fast_info, "previous_close", None)
@@ -210,15 +253,11 @@ def fetch_quote(ticker: str):
         if c is None or c.dropna().empty:
             return None, None
         c = c.dropna()
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2]) if len(c) >= 2 else None
+        last, prev = float(c.iloc[-1]), (float(c.iloc[-2]) if len(c) >= 2 else None)
         return (last, prev) if valid_prices(last, prev) else (None, None)
     except Exception:
         return None, None
 
-# =========================================
-# 뉴스 수집 (Google RSS)
-# =========================================
 def clean_html(raw):
     return BeautifulSoup(raw or "", "html.parser").get_text(" ", strip=True)
 
@@ -231,11 +270,10 @@ def _parse_entries(feed, days):
             t = datetime(*e.published_parsed[:6], tzinfo=KST)
         elif getattr(e, "updated_parsed", None):
             t = datetime(*e.updated_parsed[:6], tzinfo=KST)
-        if t and (now - t) > timedelta(days=days):
+        if t and (now - t) > timedelta(days=days):  # 기간 필터
             continue
         title, link = e.get("title", "").strip(), e.get("link", "").strip()
-        if link.startswith("./"):
-            link = "https://news.google.com/" + link[2:]
+        if link.startswith("./"): link = "https://news.google.com/" + link[2:]
         desc = clean_html(e.get("summary", ""))
         out.append({"title": title, "link": link, "time": t.strftime("%Y-%m-%d %H:%M") if t else "-", "desc": desc})
     return out
@@ -253,6 +291,7 @@ CATEGORIES = {
     "정책뉴스": ["정책","정부","예산","규제","세금","산업부"],
 }
 
+@st.cache_data(ttl=600, show_spinner=False)
 def fetch_category_news(cat, days=3, max_items=100):
     seen, out = set(), []
     for kw in CATEGORIES.get(cat, []):
@@ -269,18 +308,35 @@ def fetch_category_news(cat, days=3, max_items=100):
         except: return datetime.min
     return sorted(out, key=key, reverse=True)[:max_items]
 
-@st.cache_data(ttl=600)
+@st.cache_data(ttl=600, show_spinner=False)
 def load_all_news_3days() -> dict:
-    data = {}
-    for c in CATEGORIES:
-        data[c] = fetch_category_news(c, 3, 100)
-    return data
+    return {c: fetch_category_news(c, 3, 100) for c in CATEGORIES.keys()}
 
 news_cache = load_all_news_3days()
 
-# =========================================
-# 티커바
-# =========================================
+# =========================
+# 우측 고정 퀵 메뉴
+# =========================
+QUICK_MENU_HTML = """
+<div class="quick-nav">
+  <h4>Quick Menu</h4>
+  <a href="#sec-ticker">📊 오늘의 시장 요약</a>
+  <a href="#sec-latest-news">📰 최신 뉴스</a>
+  <a href="#sec-theme">🔥 뉴스 기반 테마 요약</a>
+  <a href="#sec-ai-sum">🧠 AI 뉴스 요약엔진</a>
+  <a href="#sec-theme-score">📊 AI 상승 확률 리포트</a>
+  <a href="#sec-top5">🚀 오늘의 AI 유망 종목 Top5</a>
+  <a href="#sec-predict">🔮 3일 예측</a>
+  <a href="#sec-admin">🛠 테마 관리자</a>
+</div>
+"""
+st.markdown(QUICK_MENU_HTML, unsafe_allow_html=True)
+
+# =========================
+# 1) 티커바
+# =========================
+st.markdown('<div id="sec-ticker"></div>', unsafe_allow_html=True)
+
 def build_ticker_items():
     rows=[("KOSPI","^KS11",2),("KOSDAQ","^KQ11",2),
           ("DOW","^DJI",2),("NASDAQ","^IXIC",2),
@@ -302,19 +358,7 @@ def build_ticker_items():
         })
     return items
 
-TICKER_CSS = """
-<style>
-.ticker-wrap{overflow:hidden;width:100%;border:1px solid #263042;border-radius:10px;background:#0f1420}
-.ticker-track{display:flex;gap:16px;align-items:center;width:max-content;will-change:transform;animation:ticker-scroll var(--speed,30s) linear infinite}
-@keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
-.badge{display:inline-flex;align-items:center;gap:8px;background:#0f1420;border:1px solid #2b3a55;color:#c7d2fe;padding:6px 10px;border-radius:8px;font-weight:700;white-space:nowrap}
-.badge .name{color:#9fb3c8;font-weight:600}
-.badge .up{color:#e66}.badge .down{color:#6aa2ff}.sep{color:#44526b;padding:0 6px}
-</style>
-"""
-st.markdown(TICKER_CSS, unsafe_allow_html=True)
-
-def render_ticker_line(items, speed_sec=30):
+def render_ticker_line(items, speed_sec=28):
     chips=[]
     for it in items:
         arrow="▲" if it["is_up"] else ("▼" if it["is_down"] else "•")
@@ -326,7 +370,7 @@ def render_ticker_line(items, speed_sec=30):
     col1,col2=st.columns([1,5])
     with col1: st.markdown("### 📊 오늘의 시장 요약")
     with col2:
-        if st.button("🔄 새로고침"):
+        if st.button("🔄 새로고침", key="btn_refresh_ticker"):
             st.cache_data.clear()
             st.rerun()
     st.markdown(html, unsafe_allow_html=True)
@@ -334,44 +378,58 @@ def render_ticker_line(items, speed_sec=30):
 
 render_ticker_line(build_ticker_items())
 
-# =========================================
-# 최신 뉴스
-# =========================================
+# =========================
+# 2) 최신 뉴스 (카테고리/표시모드)
+# =========================
+st.markdown('<div id="sec-latest-news"></div>', unsafe_allow_html=True)
 st.divider()
-st.markdown("## 📰 최신 뉴스 요약")
-c1,c2=st.columns([2,1])
-with c1: cat=st.selectbox("📂 카테고리 선택", list(CATEGORIES))
-with c2: page=st.number_input("페이지",min_value=1,value=1,step=1)
+st.markdown("## 📰 최신 뉴스")
 
-news_all = news_cache.get(cat, [])
-page_size=10
-news_page=news_all[(page-1)*page_size:page*page_size]
+# ✔ 카테고리 클릭 에러 방지: 세션 상태로 현재 선택 보존 + 확정된 옵션 리스트
+cat_options = list(CATEGORIES.keys())
+if "cur_cat" not in st.session_state:
+    st.session_state.cur_cat = cat_options[0]
+
+c1, c2, c3 = st.columns([2, 1, 1])
+with c1:
+    cur_cat = st.selectbox("📂 카테고리 선택", options=cat_options, index=cat_options.index(st.session_state.cur_cat), key="sel_cat")
+    st.session_state.cur_cat = cur_cat
+with c2:
+    page = st.number_input("페이지", min_value=1, value=1, step=1, key="news_page")
+with c3:
+    mode = st.radio("표시 모드", options=["제목만", "간략"], horizontal=False, key="news_mode")
+
+news_all = news_cache.get(st.session_state.cur_cat, [])
+page_size = 10
+start, end = (page-1)*page_size, (page)*page_size
+news_page = news_all[start:end]
+
 if not news_page:
     st.info("표시할 뉴스가 없습니다. (최근 3일 결과 없음)")
 else:
-    for i,n in enumerate(news_page, start=(page-1)*page_size+1):
-        st.markdown(
-            f"**{i}. [{n['title']}]({n['link']})**  \n"
-            f"<span style='color:#9aa0a6;font-size:0.9rem'>{n['time']}</span><br>"
-            f"<span style='color:#aeb8c5'>{n['desc']}</span>",
-            unsafe_allow_html=True
-        )
+    for i, n in enumerate(news_page, start=start+1):
+        title = n["title"]; link = n["link"]; when = n["time"]; desc = n["desc"]
+        if mode == "제목만":
+            st.markdown(f"**{i}. <a href='{link}' target='_blank'>{title}</a>**  \n"
+                        f"<span class='small-cap'>{when}</span>", unsafe_allow_html=True)
+        else:
+            short = (desc[:180] + "…") if len(desc) > 200 else desc
+            st.markdown(f"**{i}. <a href='{link}' target='_blank'>{title}</a>**  \n"
+                        f"<span class='small-cap'>{when}</span><br>"
+                        f"<span style='color:#aeb8c5'>{short}</span>",
+                        unsafe_allow_html=True)
         st.markdown("<hr style='border:0;border-top:1px solid #1f2937'/>", unsafe_allow_html=True)
-st.caption(f"최근 3일 · {cat} · 총 {len(news_all)}건")
 
-# =========================================
-# 테마 감지 (뉴스+가격 하이브리드) + 대표종목
-# =========================================
+st.caption(f"최근 3일 · {st.session_state.cur_cat} · 총 {len(news_all)}건 중 {start+1}–{min(end,len(news_all))} 표시")
+
+# =========================
+# 3) 테마 감지(뉴스+가격) + 샘플링크/대표종목
+# =========================
+st.markdown('<div id="sec-theme"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 🔥 뉴스 기반 테마 요약")
 
-# 통합 뉴스
-all_news=[]
-for lst in news_cache.values():
-    all_news.extend(lst)
-
 def detect_themes_hybrid(news_list, theme_kws:dict, price_boost=True, pct_threshold=2.0, min_stocks=2):
-    # 뉴스 기반 카운트
     counts={t:0 for t in theme_kws}
     sample={t:"" for t in theme_kws}
     for n in news_list:
@@ -380,7 +438,6 @@ def detect_themes_hybrid(news_list, theme_kws:dict, price_boost=True, pct_thresh
             if any(k in text for k in kws):
                 counts[t]+=1
                 if not sample[t]: sample[t]=n["link"]
-    # 가격 기반
     price_info={}
     for theme, stocks in THEME_STOCKS.items():
         deltas=[]
@@ -392,8 +449,7 @@ def detect_themes_hybrid(news_list, theme_kws:dict, price_boost=True, pct_thresh
         up_cnt = sum(1 for d in deltas if d>0)
         price_info[theme]=(avg_delta, up_cnt)
         if price_boost and avg_delta>=pct_threshold and up_cnt>=min_stocks:
-            counts[theme] = max(counts.get(theme,0), 1)  # 가격 주도로 최소 활성화
-    # 결과
+            counts[theme] = max(counts.get(theme,0), 1)
     rows=[]
     for theme in set(list(theme_kws.keys()) + list(THEME_STOCKS.keys())):
         c=counts.get(theme,0)
@@ -403,85 +459,103 @@ def detect_themes_hybrid(news_list, theme_kws:dict, price_boost=True, pct_thresh
                     else ("뉴스+가격" if (c>0 and avg_delta>=pct_threshold) else
                           ("뉴스 주도" if c>0 else "가격 주도")))
             rows.append({
-                "theme": theme,
-                "count": c,
-                "avg_delta(%)": round(avg_delta,2),
-                "up_cnt": int(up_cnt),
-                "driver": driver,
-                "sample_link": sample.get(theme,""),
-                "rep_stocks": " · ".join([nm for nm,_ in THEME_STOCKS.get(theme,[])]) or "-"
+                "테마": theme,
+                "뉴스건수": c,
+                "평균등락(%)": round(avg_delta,2),
+                "상승종목수": int(up_cnt),
+                "주도요인": driver,
+                "샘플링크": sample.get(theme,""),
+                "대표종목": " · ".join([nm for nm,_ in THEME_STOCKS.get(theme,[])]) or "-"
             })
-    rows.sort(key=lambda x:(x["count"], x["avg_delta(%)"]), reverse=True)
+    rows.sort(key=lambda x:(x["뉴스건수"], x["평균등락(%)"]), reverse=True)
     return rows
 
-theme_rows = detect_themes_hybrid(all_news, THEME_KEYWORDS, price_boost=True, pct_threshold=2.0, min_stocks=2)
+# 통합 뉴스로 감지
+all_news=[]
+for lst in news_cache.values(): all_news.extend(lst)
+theme_rows = detect_themes_hybrid(all_news, THEME_KEYWORDS, True, 2.0, 2)
 
 if not theme_rows:
     st.info("최근 3일 기준 테마 신호가 약합니다. (뉴스/가격 모두 약함)")
 else:
-    top5=theme_rows[:5]
-    st.markdown(
-        "**TOP 테마**: " + " ".join(
-            [f"<span style='display:inline-block;border:1px solid #2b3a55;border-radius:10px;padding:6px 10px;margin:4px;background:#0f1420'><b>{r['theme']}</b> {r['count']}건 · {r['avg_delta(%)']}% · {r['driver']}</span>"
-             for r in top5]),
-        unsafe_allow_html=True
-    )
-    st.dataframe(pd.DataFrame(theme_rows), use_container_width=True, hide_index=True)
+    # 🔗 샘플링크를 클릭 가능한 링크컬럼으로
+    df_theme = pd.DataFrame(theme_rows)
+    # 링크 칼럼을 사람이 보게 별도 칼럼 생성
+    df_theme["링크"] = df_theme["샘플링크"].apply(lambda u: u if isinstance(u,str) and u else "")
+    # Streamlit 1.30+에서 LinkColumn 사용 가능. 사용 불가 환경일 경우 아래 fallback 렌더 사용.
+    try:
+        st.dataframe(
+            df_theme.drop(columns=["샘플링크"]),
+            use_container_width=True, hide_index=True,
+            column_config={
+                "링크": st.column_config.LinkColumn("샘플 뉴스", display_text="열기", help="클릭 시 새 탭에서 열립니다.")
+            }
+        )
+    except Exception:
+        st.dataframe(df_theme.drop(columns=["샘플링크"]), use_container_width=True, hide_index=True)
+        st.caption("※ 샘플 뉴스 링크는 표의 '링크' 칼럼 URL을 클릭하세요.")
 
+    # 대표 종목 카드형 UI
     st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
-    def safe_yf_price(tk):
+    def rep_price(tk):
         last, prev = fetch_quote(tk)
-        if not valid_prices(last, prev): return None, None, "gray"
+        if not valid_prices(last, prev): return None, None, "flat"
         delta=(last-prev)/prev*100
-        color="red" if delta>0 else ("blue" if delta<0 else "gray")
-        return fmt_number(last,0), fmt_percent(delta), color
+        tone = "up" if delta>0 else ("down" if delta<0 else "flat")
+        return fmt_number(last,0), fmt_percent(delta), tone
 
-    rng=np.random.default_rng(int(date.today().strftime("%Y%m%d")))
+    # 상위 5개 테마만 샘플 카드
+    top5 = df_theme.head(5).to_dict("records")
     for tr in top5:
-        theme=tr["theme"]; pool=THEME_STOCKS.get(theme, [])
-        if not pool: continue
-        k=min(4, len(pool))
-        picks=[pool[i] for i in rng.choice(len(pool), size=k, replace=False)]
-        st.write(f"**{theme} — 주도: {tr['driver']} / 평균등락 {tr['avg_delta(%)']}%**")
-        cols=st.columns(k)
-        for col,(name,tk) in zip(cols, picks):
-            with col:
-                px,chg,color=safe_yf_price(tk)
-                arrow="▲" if color=="red" else ("▼" if color=="blue" else "■")
-                if px:
-                    st.markdown(f"<b>{name}</b><br><span style='color:{color}'>{px} {arrow} {chg}</span><br><small>{tk}</small>", unsafe_allow_html=True)
-                else:
-                    st.markdown(f"**{name}**<br>-<br><small>{tk}</small>", unsafe_allow_html=True)
-        st.divider()
+        theme = tr["테마"]; stocks = THEME_STOCKS.get(theme, [])[:6]
+        if not stocks: continue
+        st.markdown(f"**{theme}** — <span class='small-cap'>주도: {tr['주도요인']} · 평균등락 {tr['평균등락(%)']}%</span>", unsafe_allow_html=True)
+        cards = []
+        for nm, tk in stocks:
+            px, chg, tone = rep_price(tk)
+            arrow = "▲" if tone=="up" else ("▼" if tone=="down" else "■")
+            if px is None:
+                html = f"<div class='stock-card'><div class='nm'>{nm}</div><div class='ticker'>{tk}</div><div class='px flat'>-</div></div>"
+            else:
+                html = f"<div class='stock-card'><div class='nm'>{nm}</div><div class='ticker'>{tk}</div><div class='px {tone}'>{px} {arrow} {chg}</div></div>"
+            cards.append(html)
+        st.markdown(f"<div class='card-grid'>{''.join(cards)}</div>", unsafe_allow_html=True)
 
-# =========================================
-# AI 뉴스 요약엔진 (더보기형)
-# =========================================
+# =========================
+# 4) AI 뉴스 요약엔진 (가독성 업)
+# =========================
+st.markdown('<div id="sec-ai-sum"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 🧠 AI 뉴스 요약엔진")
+
 titles=[n["title"] for lst in news_cache.values() for n in lst[:60]]
 words=[]
 for t in titles:
     t=re.sub(r"[^가-힣A-Za-z0-9\s]"," ",t)
     words += [w for w in t.split() if len(w)>=2]
 top_kw=[w for w,_ in Counter(words).most_common(10)]
+
 st.markdown("### 📌 핵심 키워드 TOP10")
 st.write(", ".join(top_kw) if top_kw else "-")
 
 full_text=" ".join(titles)
 sentences=re.split(r'[.!?]\s+', full_text)
 summary=[s for s in sentences if len(s.strip())>20][:5]
+
 st.markdown("### 📰 핵심 요약문")
 if summary:
-    st.markdown(f"**요약:** {summary[0][:150]}…")
+    st.markdown(f"**요약:** {summary[0][:160]}…")
     with st.expander("전체 요약문 보기 👇"):
-        for s in summary: st.markdown(f"- {s.strip()}")
+        st.markdown("<div class='readable'>", unsafe_allow_html=True)
+        st.markdown("\n".join([f"- {s.strip()}" for s in summary]))
+        st.markdown("</div>", unsafe_allow_html=True)
 else:
     st.info("요약 데이터를 가져오지 못했습니다.")
 
-# =====================================
-# 테마별 상승 확률 리포트 (간단 스코어)
-# =====================================
+# =========================
+# 5) 테마별 상승 확률 리포트
+# =========================
+st.markdown('<div id="sec-theme-score"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 📊 AI 상승 확률 예측 리포트")
 
@@ -498,45 +572,47 @@ def calc_risk_level(avg_delta):
     return 5
 
 report_rows=[]
-for tr in top5 if theme_rows else []:
-    theme=tr["theme"]; stocks=THEME_STOCKS.get(theme, [])
-    deltas=[]
-    for _, tk in stocks:
-        last, prev = fetch_quote(tk)
-        if valid_prices(last, prev):
-            deltas.append((last-prev)/prev*100)
-    avg_delta=float(np.mean(deltas)) if deltas else 0.0
-    report_rows.append({
-        "테마": theme,
-        "뉴스빈도": tr["count"],
-        "평균등락(%)": round(avg_delta, 2),
-        "테마강도(1~5)": calc_theme_strength(tr["count"], avg_delta),
-        "리스크레벨(1~5)": calc_risk_level(avg_delta),
-    })
+if theme_rows:
+    for tr in theme_rows[:5]:
+        theme=tr["테마"]; stocks=THEME_STOCKS.get(theme, [])
+        deltas=[]
+        for _, tk in stocks:
+            last, prev = fetch_quote(tk)
+            if valid_prices(last, prev):
+                deltas.append((last-prev)/prev*100)
+        avg_delta=float(np.mean(deltas)) if deltas else 0.0
+        report_rows.append({
+            "테마": theme,
+            "뉴스빈도": tr["뉴스건수"],
+            "평균등락(%)": round(avg_delta, 2),
+            "테마강도(1~5)": calc_theme_strength(tr["뉴스건수"], avg_delta),
+            "리스크레벨(1~5)": calc_risk_level(avg_delta),
+        })
 
 if report_rows:
     st.dataframe(pd.DataFrame(report_rows), use_container_width=True, hide_index=True)
 else:
     st.info("리포트를 만들 데이터가 부족합니다.")
 
-# =====================================
-# 유망 종목 자동 추천 (Top5)
-# =====================================
+# =========================
+# 6) 유망 종목 Top5
+# =========================
+st.markdown('<div id="sec-top5"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 🚀 오늘의 AI 유망 종목 Top5")
 
 def pick_promising_stocks(theme_rows, top_n=5):
     candidates=[]
     for tr in theme_rows[:8]:
-        theme=tr["theme"]
+        theme=tr["테마"]
         for name, tk in THEME_STOCKS.get(theme, []):
             last, prev = fetch_quote(tk)
             if not valid_prices(last, prev): 
                 continue
             delta=(last-prev)/prev*100
-            score = tr["count"]*0.3 + delta*0.7
+            score = tr["뉴스건수"]*0.3 + delta*0.7
             candidates.append({"테마":theme,"종목명":name,"등락률(%)":round(delta,2),
-                               "뉴스빈도":tr["count"],"AI점수":round(score,2),"티커":tk})
+                               "뉴스빈도":tr["뉴스건수"],"AI점수":round(score,2),"티커":tk})
     df=pd.DataFrame(candidates)
     return df.sort_values("AI점수", ascending=False).head(top_n) if not df.empty else df
 
@@ -550,16 +626,15 @@ else:
     for _, row in recommend_df.iterrows():
         emoji="🔺" if row["등락률(%)"]>0 else "🔻"
         st.markdown(
-            f"**{emoji} {row['종목명']} ({row['티커']})** — "
+            f"- **{emoji} {row['종목명']} ({row['티커']})** — "
             f"테마: *{row['테마']}*, 최근 등락률: **{row['등락률(%)']}%**, "
             f"뉴스빈도: {row['뉴스빈도']}건, AI점수: {row['AI점수']}"
         )
 
-st.caption("※ AI점수 = 뉴스활성도 + 주가상승률 기반 유망도 산출")
-
-# =====================================
-# 3일 예측(로지스틱)
-# =====================================
+# =========================
+# 7) 3일 예측(로지스틱)
+# =========================
+st.markdown('<div id="sec-predict"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 🔮 AI 3일 예측: 내일 오를 확률")
 
@@ -575,8 +650,7 @@ def rsi(series: pd.Series, period: int = 14):
     roll_up = pd.Series(up, index=series.index).rolling(period).mean()
     roll_down = pd.Series(down, index=series.index).rolling(period).mean()
     rs = roll_up / (roll_down.replace(0, np.nan))
-    r = 100 - (100 / (1 + rs))
-    return r.fillna(50)
+    return (100 - (100 / (1 + rs))).fillna(50)
 
 def macd(series: pd.Series, fast=12, slow=26, signal=9):
     ema_fast = series.ewm(span=fast, adjust=False).mean()
@@ -602,8 +676,7 @@ def build_features(df: pd.DataFrame):
     return pd.concat([feat, y.rename("y")], axis=1).dropna()
 
 def fit_predict_prob(df_feat: pd.DataFrame):
-    if len(df_feat) < 120:
-        return None, None
+    if len(df_feat) < 120: return None, None
     data = df_feat.tail(300)
     X = data.drop(columns=["y"]).values
     y = data["y"].values
@@ -662,9 +735,10 @@ if not pred_df.empty:
 
 st.caption("※ 간단한 로지스틱 회귀 기반 참고지표입니다. 투자 판단의 책임은 본인에게 있습니다.")
 
-# =========================================
-# 테마 관리자 (저장 UI)
-# =========================================
+# =========================
+# 8) 테마 관리자 (저장 UI)
+# =========================
+st.markdown('<div id="sec-admin"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 🛠 테마 관리자")
 
@@ -674,23 +748,33 @@ left, right = st.columns([1,2])
 with left:
     st.markdown("**테마 선택/추가**")
     names = sorted(theme_cfg.keys())
-    selected = st.selectbox("테마", options=["(새로 만들기)"] + names, index=0)
+    default_idx = 0
+    if "admin_selected" not in st.session_state:
+        st.session_state.admin_selected = "(새로 만들기)"
+    select_options = ["(새로 만들기)"] + names
+    try:
+        default_idx = select_options.index(st.session_state.admin_selected)
+    except ValueError:
+        default_idx = 0
+    selected = st.selectbox("테마", options=select_options, index=default_idx, key="admin_sel")
+    st.session_state.admin_selected = selected
     new_name = st.text_input("테마 이름", value="" if selected=="(새로 만들기)" else selected)
 
 with right:
     st.markdown("**키워드 & 종목 편집**")
     cur = theme_cfg.get(selected, {"keywords":[], "stocks":[]}) if selected!="(새로 만들기)" else {"keywords":[], "stocks":[]}
     kw_text = st.text_area("키워드 (쉼표로 구분)", value=", ".join(cur.get("keywords", [])),
-                           placeholder="예) 전력, 송전, HVDC, 전력망 …")
+                           placeholder="예) 전력, 송전, HVDC, 전력망 …", key="admin_kw")
     stock_text = st.text_area(
         "종목 목록 (한 줄에 `종목명,티커`)",
         value="\n".join([f"{s['name']},{s['ticker']}" for s in cur.get("stocks", [])]),
-        placeholder="예)\n한국전력,015760.KS\n한전KPS,051600.KS"
+        placeholder="예)\n한국전력,015760.KS\n한전KPS,051600.KS",
+        key="admin_stocks"
     )
 
     c1,c2,c3 = st.columns(3)
     with c1:
-        if st.button("💾 저장/업데이트"):
+        if st.button("💾 저장/업데이트", key="btn_admin_save"):
             if not new_name.strip():
                 st.error("테마 이름을 입력하세요.")
             else:
@@ -711,7 +795,7 @@ with right:
                 st.session_state.theme_cfg = theme_cfg
                 st.rerun()
     with c2:
-        if st.button("🗑 삭제"):
+        if st.button("🗑 삭제", key="btn_admin_del"):
             if selected=="(새로 만들기)":
                 st.warning("삭제할 기존 테마를 선택하세요.")
             else:
@@ -727,6 +811,4 @@ with right:
             data=json.dumps(theme_cfg, ensure_ascii=False, indent=2),
             file_name="themes.json",
             mime="application/json",
-        )
-
-st.caption("💡 영구 저장을 원하면 Secrets에 `GITHUB_TOKEN`, `THEME_REPO`, `THEME_PATH` 설정.")
+)
