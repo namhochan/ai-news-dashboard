@@ -1,64 +1,96 @@
 {
-  "updated_at_kst": "2025-10-23 17:06",
-  "themes": [
+  "generated_at": "2025-10-23T17:52:46.433854+09:00",
+  "top_themes": [
+    "모빌리티",
+    "반도체",
+    "로봇",
+    "AI",
+    "해양"
+  ],
+  "theme_table": [
     {
-      "theme": "AI",
-      "count": 0
+      "theme": "모빌리티",
+      "count": 74,
+      "score": 74,
+      "rep_keywords": "모빌리티 · FIX · DIFA · ID"
     },
     {
       "theme": "반도체",
-      "count": 0
+      "count": 58,
+      "score": 58,
+      "rep_keywords": "반도체 · 삼성전자 · SEDEX · CTO"
     },
     {
       "theme": "로봇",
-      "count": 0
+      "count": 55,
+      "score": 55,
+      "rep_keywords": "AI · LG · HD현대로보틱스 · H2"
     },
     {
-      "theme": "이차전지",
-      "count": 0
+      "theme": "AI",
+      "count": 53,
+      "score": 53,
+      "rep_keywords": "AI · GPU · 삼성전자 · TJB"
+    },
+    {
+      "theme": "해양",
+      "count": 52,
+      "score": 52,
+      "rep_keywords": "KORMARINE · 조선해양에너지 · KNN · 조선"
+    },
+    {
+      "theme": "데이터센터",
+      "count": 49,
+      "score": 49,
+      "rep_keywords": "AI · 재생에너지 · Arm · ETF"
     },
     {
       "theme": "에너지",
-      "count": 0
+      "count": 44,
+      "score": 44,
+      "rep_keywords": "에너지 · 재생에너지 · AI · SK에너지"
     },
     {
-      "theme": "원전/SMR",
-      "count": 0
+      "theme": "스마트팩토리",
+      "count": 42,
+      "score": 42,
+      "rep_keywords": "AX · ITBizNews · Chosun · Biz"
     },
     {
-      "theme": "조선/해양",
-      "count": 0
+      "theme": "보안",
+      "count": 36,
+      "score": 36,
+      "rep_keywords": "AI · TJB · MCP · A2A"
+    },
+    {
+      "theme": "이차전지",
+      "count": 36,
+      "score": 36,
+      "rep_keywords": "ESS · Chosun · Biz · TJB"
     },
     {
       "theme": "바이오",
-      "count": 0
+      "count": 26,
+      "score": 26,
+      "rep_keywords": "지투지바이오 · 바이오 · 아리바이오 · 제약바이오"
     },
     {
-      "theme": "디지털",
-      "count": 0
+      "theme": "디스플레이",
+      "count": 25,
+      "score": 25,
+      "rep_keywords": "디스플레이 · 반도체 · 제약바이오 · LG디스플레이"
+    },
+    {
+      "theme": "원전",
+      "count": 23,
+      "score": 23,
+      "rep_keywords": "KBS · Th · Vi · Nam"
+    },
+    {
+      "theme": "조선",
+      "count": 17,
+      "score": 17,
+      "rep_keywords": "KNN · TV조선 · 조선해양에너지 · 대선조선"
     }
-  ],
-  "top5": [
-    {
-      "theme": "AI",
-      "count": 0
-    },
-    {
-      "theme": "반도체",
-      "count": 0
-    },
-    {
-      "theme": "로봇",
-      "count": 0
-    },
-    {
-      "theme": "이차전지",
-      "count": 0
-    },
-    {
-      "theme": "에너지",
-      "count": 0
-    }
-  ],
-  "headlines": []
+  ]
 }

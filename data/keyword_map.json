@@ -1,89 +1,124 @@
 {
-  "updated_at_kst": "2025-10-23 17:08",
-  "keywords": [
+  "monthly": [
+    {
+      "keyword": "nbsp",
+      "count": 1180
+    },
+    {
+      "keyword": "font",
+      "count": 1180
+    },
+    {
+      "keyword": "com",
+      "count": 620
+    },
+    {
+      "keyword": "news",
+      "count": 594
+    },
+    {
+      "keyword": "href",
+      "count": 590
+    },
+    {
+      "keyword": "https",
+      "count": 590
+    },
+    {
+      "keyword": "google",
+      "count": 590
+    },
+    {
+      "keyword": "rss",
+      "count": 590
+    },
+    {
+      "keyword": "articles",
+      "count": 590
+    },
+    {
+      "keyword": "oc",
+      "count": 590
+    },
+    {
+      "keyword": "target",
+      "count": 590
+    },
+    {
+      "keyword": "blank",
+      "count": 590
+    },
+    {
+      "keyword": "color",
+      "count": 590
+    },
+    {
+      "keyword": "6f6f6f",
+      "count": 590
+    },
     {
       "keyword": "AI",
-      "count": 0
+      "count": 164
     },
     {
       "keyword": "반도체",
-      "count": 0
+      "count": 104
     },
     {
-      "keyword": "HBM",
-      "count": 0
+      "keyword": "2025",
+      "count": 94
     },
     {
-      "keyword": "메모리",
-      "count": 0
+      "keyword": "모빌리티",
+      "count": 94
     },
     {
-      "keyword": "GPU",
-      "count": 0
+      "keyword": "데이터센터",
+      "count": 78
+    },
+    {
+      "keyword": "조선일보",
+      "count": 70
     },
     {
       "keyword": "로봇",
-      "count": 0
+      "count": 68
+    },
+    {
+      "keyword": "daum",
+      "count": 60
+    },
+    {
+      "keyword": "net",
+      "count": 60
     },
     {
       "keyword": "스마트팩토리",
-      "count": 0
+      "count": 60
     },
     {
-      "keyword": "자동차",
-      "count": 0
+      "keyword": "뉴스1",
+      "count": 58
     },
     {
-      "keyword": "조선",
-      "count": 0
+      "keyword": "CJ올리브네트웍스",
+      "count": 54
     },
     {
-      "keyword": "LNG",
-      "count": 0
+      "keyword": "구축",
+      "count": 50
     },
     {
-      "keyword": "해양",
-      "count": 0
+      "keyword": "소주스토리",
+      "count": 50
     },
     {
-      "keyword": "선박",
-      "count": 0
+      "keyword": "혁신",
+      "count": 48
     },
     {
-      "keyword": "원전",
-      "count": 0
-    },
-    {
-      "keyword": "원자력",
-      "count": 0
-    },
-    {
-      "keyword": "SMR",
-      "count": 0
-    },
-    {
-      "keyword": "양자",
-      "count": 0
-    },
-    {
-      "keyword": "이차전지",
-      "count": 0
-    },
-    {
-      "keyword": "리사이클링",
-      "count": 0
-    },
-    {
-      "keyword": "디지털",
-      "count": 0
-    },
-    {
-      "keyword": "바이오",
-      "count": 0
-    },
-    {
-      "keyword": "에너지",
-      "count": 0
+      "keyword": "글로벌",
+      "count": 48
     }
   ]
 }
