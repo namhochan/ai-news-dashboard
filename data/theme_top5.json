@@ -1,6 +1,139 @@
 [
   {
     "theme": "AI 반도체",
-    "score": 10
+    "desc": "AI 반도체 관련 뉴스 빈도 60건. 핵심 키워드: AI, 반도체, HBM.",
+    "stocks": [
+      "삼성전자",
+      "하이닉스",
+      "엘비세미콘",
+      "티씨케이"
+    ],
+    "score": 60,
+    "top_news": [
+      {
+        "title": "메타, AI 부서에서 600명 해고...MSL 신규 영입 인원은 제외 - AI타임스",
+        "url": "https://news.google.com/rss/articles/CBMiakFVX3lxTE5UdWZJc0VzM0N5QUZhRHMwYkd5aXVJWmxFcng1aHJEOV9sb2ZvUDBtRWVuTjlGUkhSRXIzV2I4N19xM0tIaUxWbWh0REljZTYzRnZNd0FsNG9ZRUZCN1dvS2N1eWlua1EyYkE?oc=5",
+        "published": "Thu, 23 Oct 2025 03:13:54 GMT"
+      },
+      {
+        "title": "2조 5천억 '국가 AI컴퓨팅센터' 유치 실패 '충격' 휩싸인 광주시 - 노컷뉴스",
+        "url": "https://news.google.com/rss/articles/CBMiUkFVX3lxTFBZRi1TME1yNmgwamVDVkV1QnBHZ0doVmZPOWl1b1RxNjZGTlhpTWxRcUhTdmFITnJNclNTV0xhQllwbXZiX2lIVHc0cnlFczl5a3c?oc=5",
+        "published": "Tue, 21 Oct 2025 09:03:00 GMT"
+      },
+      {
+        "title": "\"직장에선 AI, 고객에겐 인간미\"…韓 'AI 네이티브' 세대, 기업에 엄격해 - 지디넷코리아",
+        "url": "https://news.google.com/rss/articles/CBMiVkFVX3lxTFBzMjhCU3JIOV9vUGtvYjJfS1BaeVFudENpRkRkLWJmMkxMUzI5MHc0aDVOUXhLQkQ1MnFQcGRKVFF4RlZsclBZajREb3JuOXNqVmtWa0RB?oc=5",
+        "published": "Thu, 23 Oct 2025 05:26:06 GMT"
+      }
+    ]
+  },
+  {
+    "theme": "2차전지 리사이클링",
+    "desc": "2차전지 리사이클링 관련 뉴스 빈도 50건. 핵심 키워드: 이차전지, 2차전지, 리사이클링.",
+    "stocks": [
+      "성일하이텍",
+      "새빗켐",
+      "에코프로"
+    ],
+    "score": 50,
+    "top_news": [
+      {
+        "title": "\"나도 AI수혜주\"…美 AI발 ESS수요 급증에 이차전지주 '방긋' - 머니투데이 - 머니투데이",
+        "url": "https://news.google.com/rss/articles/CBMiaEFVX3lxTE5maEIyUXhRRkZtTWdWWmR5bFVsMDZGdlgxd2tLN3ZONTh1ODlNYTdkLUJWWUl0WnhrWUN5T3ZHUDdFMHJXVHhUVDlyYTl4VmRzYmpiNlZTQ2d3ZC1FTVRtN3dKN0FuNUtO0gFuQVVfeXFMTV9KbDFyNEZDZlhBTGY1SkoxZ3B1RlVZZUlRNVpRRDEybDlqLWRMQ1RFcGswQkpYWmlBa203WVRacy1VOEZqSm1aRnVoZEZtRHEzajN2cFJOcWZiTUdrem1Ma21Jd0VNQWhFNk9JaGc?oc=5",
+        "published": "Wed, 22 Oct 2025 02:24:24 GMT"
+      },
+      {
+        "title": "9조원대 투자 새만금...전북 '이차전지 산업 중심지' 되나 - 이투데이",
+        "url": "https://news.google.com/rss/articles/CBMiVEFVX3lxTE9velBMNWhNSWp1V1ZMV0MweEk3V3JTTEY2TDREZjRLNUFsdlJXMUVMOWstYUVfWnVWRERiNmFZcENKeEFyb29aUTFVeUszWEhzejNabw?oc=5",
+        "published": "Tue, 21 Oct 2025 23:35:00 GMT"
+      },
+      {
+        "title": "대전TP, 체코배터리클러스터와 이차전지 협력 시동 - 연합뉴스",
+        "url": "https://news.google.com/rss/articles/CBMiW0FVX3lxTE1XRWwtNnJxa2wtTXZ0ZnBpT1B1YndQbzJ6cGtVVXVhTUJodjlFYktURENiNUlXVEVVWEltWU52TVdiSm1RNV9XU09DTEg3azk1MlF5WmdyRFFpWDDSAWBBVV95cUxPVHVXd1M0bWFfR0FvcDdQUlJVVFo3MG9CdW5SS0h4aW5qX2w0NEZKUVZybG00TFMtZm9TOFVBWEJxR1N5Q2tKZ2JkM0xUd2RQNTUwT1VhY1F1N09hdjEtRGw?oc=5",
+        "published": "Thu, 23 Oct 2025 05:28:40 GMT"
+      }
+    ]
+  },
+  {
+    "theme": "조선/해양플랜트",
+    "desc": "조선/해양플랜트 관련 뉴스 빈도 40건. 핵심 키워드: 조선, LNG, 해양.",
+    "stocks": [
+      "HD현대중공업",
+      "대우조선해양",
+      "대한조선",
+      "삼성중공업"
+    ],
+    "score": 40,
+    "top_news": [
+      {
+        "title": "HD한국조선해양, 초대형 원유운반선 2척 수주…3600억원 규모 - 매일경제",
+        "url": "https://news.google.com/rss/articles/CBMiVkFVX3lxTE9HVVh6OHdnSEs4YUJPLWxRVDNkSk96dHpiYlhzajJKOUk3dnZpSURFZVdEYWM5X1VjNVpTVnhQVWZEWWltUkJUWHRTWmdkQ0JpNzhuX0Z3?oc=5",
+        "published": "Mon, 20 Oct 2025 07:48:33 GMT"
+      },
+      {
+        "title": "[특징주] 조선주 급등, 조선기자재는 폭등 - 머니S - 머니S",
+        "url": "https://news.google.com/rss/articles/CBMiYkFVX3lxTE96RWs3MXZSTU1YSjFGMmd5aFhxODZ1SGFXWWZ2NkJhVHdwUnR4bkhPZi1aNDN5cGJ2M3kyRFoxTV9oX3lyeXFSeFlqcHc3aUNhNzNSTnBUUEd3UUhEQm5OR1Jn0gFkQVVfeXFMTXFhaVhLc1h6SmhlTWsybE9oTlNoNG05b2FrMzFZVTZkUHJQbno2ZVpYNkVmZ2ZxVThlQ3hndFI5VmRyMDVaRzZ6VGlMMWV3Z1h3V2gycEJjMi1sT0h0UmRtZlJncA?oc=5",
+        "published": "Tue, 21 Oct 2025 04:48:53 GMT"
+      },
+      {
+        "title": "“美 조선산업 엉망…한국이 구할 수도” CNN 집중조명 - 나우뉴스",
+        "url": "https://news.google.com/rss/articles/CBMicEFVX3lxTE4xUlRnSE50WDU3Mmk1QjJFdk5wcFoycEVhMlVKMjkxQzdaajZGZFNJNTdMQ0hNYmE5WEYyeVUzN2VlWDk2bGY5dnNmVTF1VW9lNHZUZzA0eVJKeFJkYUNaWkRyakxXMzJKeXR0c1RjSnQ?oc=5",
+        "published": "Tue, 21 Oct 2025 08:33:09 GMT"
+      }
+    ]
+  },
+  {
+    "theme": "원전/SMR",
+    "desc": "원전/SMR 관련 뉴스 빈도 40건. 핵심 키워드: 원전, 원자력, SMR.",
+    "stocks": [
+      "두산에너빌리티",
+      "보성파워텍",
+      "한신기계"
+    ],
+    "score": 40,
+    "top_news": [
+      {
+        "title": "[단독]원전 ‘수소폭발’ 평가 프로그램 만든 기업은 “한계 있다”는데…국내 당국은 “문제없다” - 경향신문",
+        "url": "https://news.google.com/rss/articles/CBMiWkFVX3lxTFA0SW9senVOZmM5Zm11QlRPM0dSQk5ZQzlSaHBHZUJuYVhONS1zY3ZvTlRHN3lQd3JtUE9lTlRCa1FxSFpWOTZzdG1EeThISTdDX1YxT0kyNVJMZ9IBX0FVX3lxTE8xV3VaSGdPQUNkR3Z0cFM5TndPQWhXWnVzdFVlR1pDeU01ZlE0NlhVYUxEc2FkYmp3Q3BMZG1Rd3ZsSGc0UHd4NUV4TWZzZk53X2I1M010dnpoaHB6aW04?oc=5",
+        "published": "Tue, 21 Oct 2025 21:00:00 GMT"
+      },
+      {
+        "title": "[단독] '한수원 참여' 폴란드 원전, 지분정리 완료…재개 속도 낸다 - 더구루",
+        "url": "https://news.google.com/rss/articles/CBMiYkFVX3lxTE9McV9SVjZzdF9xY1VuTTRMdnBCQW9rVFdQOXY2RkRsa3JYZ0xGV2ExeVlYa204T2FSNHdvWG9uTXczd0pCUmRBaTMyeWI0MWQzdjZvRlp6UE1qVVJsNUVSVXl3?oc=5",
+        "published": "Tue, 21 Oct 2025 00:40:00 GMT"
+      },
+      {
+        "title": "[신문은 선생님] [재미있는 과학] 레고처럼 조립하는 원전… 배관 없애 방사능 유출 위험 줄였죠 - 조선일보",
+        "url": "https://news.google.com/rss/articles/CBMif0FVX3lxTE44YWJSaXI4M2V4al9xN2NFYk51UU93eEJ1c0Q2djZuSGNYNDU5UXRNcWZxTHFEZWVBMWdXOGRuZTdLSFUtRHl4M2UtZlc3cjhyekt1MmpUN1VPM3lpZ2xiV0MxNU5rZXA3XzZLVTMwbUo2Vm9WM19BcGJHcHhrWDjSAZMBQVVfeXFMTUhfbzZJMDBDaFNSRmpWRFVkY3NDRDk5MHpib19RbDVVckNKR3d3SEY2MEM0ekhVQlE5M2lKb0FROTd3U1NMdEFLNXpiU21xLUhLYnM1dGhGMjQ4aUNMR05YVTlZUzB1RFpuNHZmZTFwNXplaEpoWEowbXNNQ0w1alA3U2lmQjRvUEdPT2lQUWxJVmpj?oc=5",
+        "published": "Mon, 20 Oct 2025 15:42:00 GMT"
+      }
+    ]
+  },
+  {
+    "theme": "로봇/스마트팩토리",
+    "desc": "로봇/스마트팩토리 관련 뉴스 빈도 30건. 핵심 키워드: 로봇, 스마트팩토리, 자동화.",
+    "stocks": [
+      "유진로봇",
+      "휴림로봇",
+      "한라캐스트"
+    ],
+    "score": 30,
+    "top_news": [
+      {
+        "title": "로보티즈 '로봇 손', 글로벌 빅테크 선주문 받아 - 지디넷코리아",
+        "url": "https://news.google.com/rss/articles/CBMiVkFVX3lxTFBMTHdVOUxVaE96b2d2N1B6dF9YT2E2MUpHTzdneEZRaTFZOFIwS1Bfb0ZuM0tlTnhIbFo3YXZKeWpRLW5LazBJdTBhYXJzeVUtS1h3b0dR?oc=5",
+        "published": "Thu, 23 Oct 2025 05:34:57 GMT"
+      },
+      {
+        "title": "[영상] 中 휴머노이드 로봇, 발레·킥복싱까지 섭렵 - 지디넷코리아",
+        "url": "https://news.google.com/rss/articles/CBMiVkFVX3lxTE02aml0empUQTJWTl9OTnRudGtWOXh0RDRFSHF6QUhoSUpIMmV2UmIwem1LU1hlRzNLeVJOSkZUSnI0cTlYakQ4VDBtNUJEU1hhSDJURUtR?oc=5",
+        "published": "Wed, 22 Oct 2025 06:13:41 GMT"
+      },
+      {
+        "title": "눈코입 뚜렷한 얼굴로 발레하는 中 로봇… “휴머노이드 ‘H2’, 인간 동작과 가장 비슷” - 동아일보",
+        "url": "https://news.google.com/rss/articles/CBMic0FVX3lxTFBGMUFzUm9qeXVycWNBY2hwS25WNkdMWGtxSjJDZlBCSEJ2OVpCTmdjY0tjcGNHY2lPdUllY09wUE8yeXlYTDMweUo4d3FTQmNaMzFMQmZqZzRnWUNYYlMwTFZNa2VWakEyM3JaN3RLX1pLLUHSAWZBVV95cUxNR0xxRk9RZkFiVnM3WnFLdVBzZzRoQXZhU3pqXzFoUm9kS21pWTVjOS04N1o3Q0ZKS29SOGxXaV9KdVY5RVdPaDA1U2M0azlaTjA4RVdrNWVXRHl0ZktSQ0FtQWhOZlE?oc=5",
+        "published": "Tue, 21 Oct 2025 18:00:00 GMT"
+      }
+    ]
   }
 ]

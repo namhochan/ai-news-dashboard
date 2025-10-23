@@ -1,1 +1,90 @@
-[]
+[
+  {
+    "keyword": "AI",
+    "count": 10
+  },
+  {
+    "keyword": "반도체",
+    "count": 10
+  },
+  {
+    "keyword": "HBM",
+    "count": 10
+  },
+  {
+    "keyword": "메모리",
+    "count": 10
+  },
+  {
+    "keyword": "GPU",
+    "count": 10
+  },
+  {
+    "keyword": "칩",
+    "count": 10
+  },
+  {
+    "keyword": "로봇",
+    "count": 10
+  },
+  {
+    "keyword": "스마트팩토리",
+    "count": 10
+  },
+  {
+    "keyword": "자동화",
+    "count": 10
+  },
+  {
+    "keyword": "조선",
+    "count": 10
+  },
+  {
+    "keyword": "LNG",
+    "count": 10
+  },
+  {
+    "keyword": "해양",
+    "count": 10
+  },
+  {
+    "keyword": "선박",
+    "count": 10
+  },
+  {
+    "keyword": "원전",
+    "count": 10
+  },
+  {
+    "keyword": "원자력",
+    "count": 10
+  },
+  {
+    "keyword": "SMR",
+    "count": 10
+  },
+  {
+    "keyword": "원전수출",
+    "count": 10
+  },
+  {
+    "keyword": "이차전지",
+    "count": 10
+  },
+  {
+    "keyword": "2차전지",
+    "count": 10
+  },
+  {
+    "keyword": "리사이클링",
+    "count": 10
+  },
+  {
+    "keyword": "양극재",
+    "count": 10
+  },
+  {
+    "keyword": "음극재",
+    "count": 10
+  }
+]
