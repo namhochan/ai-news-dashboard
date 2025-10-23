@@ -229,3 +229,35 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # ==============================
+# 📨 Telegram Notification
+# ==============================
+import requests
+import os
+
+def send_telegram_message(message: str):
+    """텔레그램으로 알림 전송"""
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
+    chat_id = os.getenv("TELEGRAM_CHAT_ID")
+    if not token or not chat_id:
+        print("⚠️ Telegram 설정 누락")
+        return
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {"chat_id": chat_id, "text": message}
+    try:
+        requests.post(url, data=payload)
+        print("✅ Telegram 알림 전송 완료")
+    except Exception as e:
+        print("🚨 Telegram 알림 실패:", e)
+
+
+# 예시: 최신 헤드라인 중 하나를 알림으로 보내기
+if __name__ == "__main__":
+    try:
+        latest_headlines = data["headline_top10"]["title"].tolist()[:3]
+        message = "📰 AI 뉴스 대시보드 자동 업데이트 완료!\n\n"
+        for i, h in enumerate(latest_headlines, 1):
+            message += f"{i}. {h}\n"
+        send_telegram_message(message)
+    except Exception as e:
+        print("알림 준비 중 오류:", e)
