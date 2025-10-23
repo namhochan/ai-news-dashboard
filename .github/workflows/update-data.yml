@@ -1,0 +1,32 @@
+name: Update AI News Dashboard (hourly)
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # 매시간 정각마다 자동 실행
+  workflow_dispatch:    # 수동 실행도 가능
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.10"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run data update
+        run: python app.py
+
+      - name: Commit and push updates
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add data/*.json
+          git commit -m "Auto update data files"
+          git push
