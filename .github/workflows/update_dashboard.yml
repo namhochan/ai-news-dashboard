@@ -2,7 +2,7 @@ name: Update AI News Dashboard (hourly)
 
 on:
   schedule:
-    - cron: "0 * * * *"
+    - cron: "0 * * * *"   # 매시 정각
   workflow_dispatch: {}
 
 jobs:
@@ -12,8 +12,23 @@ jobs:
       contents: write
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Show repo tree (before)
+        run: |
+          echo "== REPO TREE =="
+          ls -al
+          echo "== SCRIPTS =="
+          ls -al scripts || true
+          echo "== DATA =="
+          ls -al data || true
+
+      - name: Verify updater exists
+        run: |
+          test -f scripts/update_dashboard.py || (echo "ERROR: scripts/update_dashboard.py not found" && exit 1)
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,38 +37,52 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install yfinance feedparser requests pytz
+          python -V
+          python -m pip install --upgrade pip setuptools wheel
+          # 필요 패키지 모두 설치 (requirements가 비어도 안전)
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt || true
+          fi
+          pip install yfinance feedparser requests pytz plotly pandas
 
       - name: Run updater
-        run: python scripts/update_dashboard.py
-
-      - name: Show data dir
         run: |
-          echo "---- data dir ----"
-          ls -al data || true
-          echo "---- headlines length ----"
-          if [ -f data/headlines.json ]; then
-            python - <<'PY'
-import json;print(len(json.load(open("data/headlines.json","r",encoding="utf-8"))))
-PY
-          else
-            echo "headlines.json not found"
-          fi
+          set -e
+          python scripts/update_dashboard.py
 
-      - name: Ensure headlines.json exists
+      - name: Ensure data files exist
         run: |
           mkdir -p data
+          [ -f data/market_today.json ] || echo "{}" > data/market_today.json
+          [ -f data/keyword_map.json ] || echo "{}" > data/keyword_map.json
           [ -f data/headlines.json ] || echo "[]" > data/headlines.json
+          [ -f data/theme_top5.json ] || echo "[]" > data/theme_top5.json
 
-      - name: Commit & Push changes (only if changed)
+      - name: Show data snapshot
+        run: |
+          echo "== DATA AFTER UPDATE =="
+          ls -al data
+          echo "---- headlines count ----"
+          python - <<'PY'
+import json,sys
+from pathlib import Path
+p=Path("data/headlines.json")
+print(len(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else 0)
+PY
+          echo "---- market_today.json ----"
+          cat data/market_today.json || true
+
+      - name: Pull to avoid non-fast-forward
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git pull --rebase || true
+
+      - name: Commit & Push changes (only if changed)
+        run: |
           git add -A
           if git diff --cached --quiet; then
-            echo "No data changes."
+            echo "No data changes to commit."
           else
             git commit -m "auto: hourly refresh"
             git push
