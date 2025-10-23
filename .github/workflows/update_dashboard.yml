@@ -2,8 +2,8 @@ name: Update AI News Dashboard (hourly)
 
 on:
   schedule:
-    - cron: "0 * * * *"   # 매 정각
-  workflow_dispatch: {}    # 수동 실행 버튼
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
 
 jobs:
   update:
@@ -29,6 +29,23 @@ jobs:
       - name: Run updater
         run: python scripts/update_dashboard.py
 
+      # ✅ 새로 추가: 결과 확인 로그
+      - name: Show data dir
+        run: |
+          echo "---- data dir ----"
+          ls -al data || true
+          echo "---- headlines preview ----"
+          test -f data/headlines.json && jq 'length' data/headlines.json || echo "headlines.json not found"
+
+      # ✅ 새로 추가: 없으면 반드시 만들어 주기
+      - name: Ensure headlines.json exists
+        run: |
+          mkdir -p data
+          if [ ! -f data/headlines.json ]; then
+            echo "[]" > data/headlines.json
+            echo "created empty data/headlines.json"
+          fi
+
       - name: Commit & Push changes (only if changed)
         run: |
           git config user.name "github-actions[bot]"
@@ -36,7 +53,7 @@ jobs:
           git add -A
           if git diff --cached --quiet; then
             echo "No data changes."
-          else:
+          else
             git commit -m "auto: hourly refresh"
             git push
           fi
