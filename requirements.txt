@@ -1,8 +1,7 @@
-streamlit>=1.36
-yfinance>=0.2.40
-pandas>=2.2
-numpy>=1.26
-feedparser>=6.0
-beautifulsoup4>=4.12
-lxml>=5.2
-scikit-learn>=1.5    
+streamlit
+yfinance
+feedparser
+beautifulsoup4
+scikit-learn
+pandas
+numpy
