@@ -2,8 +2,8 @@
   "themes": [
     {
       "theme": "AI",
-      "count": 11,
-      "score": 11,
+      "count": 9,
+      "score": 9,
       "sample_link": "https://news.google.com/rss/articles/CBMic0FVX3lxTFBRUkVPeGFRYmV1cFlSeWUxWGFudjV4SFpQNFJKUm9JQjNGMzBTQ29jOEt3aFc5WnlGRnZ0YjNGSXl1VGxYaFpmU0NWTExmUWFXR1lRWVZzbVpmSTB3eklIai11R2YxaklBd1BfVkJycmNWTUE?oc=5"
     },
     {
@@ -11,12 +11,6 @@
       "count": 3,
       "score": 3,
       "sample_link": "https://news.google.com/rss/articles/CBMiVEFVX3lxTFAyVVhGZzZ2OEg2X25RbTZzd3B4WTVHUmw1NEdkbGlidWU0aWpMZm5nOEFQNHdyUzBoMnpkcGVDSFBfSUxPNEZHY09zdm1YN0IzODFDag?oc=5"
-    },
-    {
-      "theme": "조선",
-      "count": 2,
-      "score": 2,
-      "sample_link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxNREtrZUtrOVBIa1prSllmX1RwZHBGMnRxRVlXcGt1QmxyZjRuTzhNXzRoWEpHWlNkSnhTS3I1YWEyZFBRbEpPY3RLdFhRUnhzSEgtUmpyb3ZPbnlKbTI2TDh6bHBWX1lZNWhZX1JuNVQ5UVl6WHdXTjhIZW1xQXU5a1JCNjFmZDRF0gGcAUFVX3lxTE8yQ0l5WFNkWHFvSW00VElWcXlMVndDVzdOZDlTZUUwNFRBNHNYZFM4a1k1T2s5NGRQb0Z1c1NCd19SaGNWb0dJdEY4XzRrZHpkbHM1MkhHelN1ZnZsdVFfdUxNVEdSTHRqMWFEaDVFdGQyT3J2ZFA1QzlNYkZfU2pudDA4TkFrdldRMVdwRmhtcWtFOVF6ZlZLNHFqOA?oc=5"
     },
     {
       "theme": "로봇",
@@ -31,10 +25,10 @@
       "sample_link": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE1IeFEycWtLSGxtLU5JekZQUXFmOXlqYnZYc1Q1RGo4Z2N1a2h4aFdPb0l1YUF0Q2h0MlV1b0trSldYbHBqMDY2Q0VMMU5CUVE?oc=5"
     },
     {
-      "theme": "에너지",
+      "theme": "조선",
       "count": 1,
       "score": 1,
-      "sample_link": "https://news.google.com/rss/articles/CBMiXkFVX3lxTE1jR2hzbFh5eGRvYzlrclN1S2F3MFFvZ29hT05kZ0VhbGFDcWdXWE12M1Zrd3p5RHJGbm5qRjBWMExoRkFvOVFUbTRrYVZVbktoODdaaTlldGRFbDRsdHc?oc=5"
+      "sample_link": "https://news.google.com/rss/articles/CBMiiAFBVV95cUxNREtrZUtrOVBIa1prSllmX1RwZHBGMnRxRVlXcGt1QmxyZjRuTzhNXzRoWEpHWlNkSnhTS3I1YWEyZFBRbEpPY3RLdFhRUnhzSEgtUmpyb3ZPbnlKbTI2TDh6bHBWX1lZNWhZX1JuNVQ5UVl6WHdXTjhIZW1xQXU5a1JCNjFmZDRF0gGcAUFVX3lxTE8yQ0l5WFNkWHFvSW00VElWcXlMVndDVzdOZDlTZUUwNFRBNHNYZFM4a1k1T2s5NGRQb0Z1c1NCd19SaGNWb0dJdEY4XzRrZHpkbHM1MkhHelN1ZnZsdVFfdUxNVEdSTHRqMWFEaDVFdGQyT3J2ZFA1QzlNYkZfU2pudDA4TkFrdldRMVdwRmhtcWtFOVF6ZlZLNHFqOA?oc=5"
     },
     {
       "theme": "바이오",
