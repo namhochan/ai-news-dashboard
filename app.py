@@ -94,37 +94,55 @@ def fetch_two_news(query: str, lang: str = "ko", gl: str = "KR") -> List[Dict[st
 # -----------------------------
 st.markdown("# 🧠 AI 뉴스리포트 종합 대시보드 (자동 업데이트)")
 st.caption(f"업데이트 시간: {kst_now_str()}")
-
 # -----------------------------
-# 오늘의 시장 요약 (optional 데이터 안전 표시)
+# 오늘의 시장 요약 (yfinance → JSON → 표시)
 # -----------------------------
 st.markdown("## 📊 오늘의 시장 요약")
-mkt = load_json("data/market_today.json", {})
-col1, col2, col3 = st.columns(3)
 
-with col1:
-    st.caption("KOSPI")
-    kospi = mkt.get("KOSPI", {})
-    val = kospi.get("value", None)
-    chg = kospi.get("change_pct", None)
+def read_market():
+    path = "data/market_today.json"
+    if not os.path.exists(path):
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+def badge_delta(v):
+    if v is None:
+        return "<span style='opacity:0.6'>—</span>"
+    if v > 0:
+        return f"<span style='color:#21c55d'>↑ {v:.2f}%</span>"
+    if v < 0:
+        return f"<span style='color:#ef4444'>↓ {abs(v):.2f}%</span>"
+    return "<span>0.00%</span>"
+
+mkt = read_market()
+
+def metric_card(label, key):
+    d = mkt.get(key, {})
+    val = d.get("value", None)
+    chg = d.get("change_pct", None)
+    st.caption(label)
     st.markdown(f"### {val if val is not None else '—'}")
     st.markdown(badge_delta(chg), unsafe_allow_html=True)
 
-with col2:
-    st.caption("KOSDAQ")
-    kosdaq = mkt.get("KOSDAQ", {})
-    val = kosdaq.get("value", None)
-    chg = kosdaq.get("change_pct", None)
-    st.markdown(f"### {val if val is not None else '—'}")
-    st.markdown(badge_delta(chg), unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
+with c1:
+    metric_card("KOSPI", "KOSPI")
+with c2:
+    metric_card("KOSDAQ", "KOSDAQ")
+with c3:
+    metric_card("환율(USD/KRW)", "USDKRW")
 
-with col3:
-    st.caption("환율(USD/KRW)")
-    fx = mkt.get("USDKRW", {})
-    val = fx.get("value", None)
-    chg = fx.get("change_pct", None)
-    st.markdown(f"### {val if val is not None else '—'}")
-    st.markdown(badge_delta(chg), unsafe_allow_html=True)
+c4, c5, c6 = st.columns(3)
+with c4:
+    metric_card("WTI", "WTI")
+with c5:
+    metric_card("Gold", "Gold")
+with c6:
+    metric_card("Copper", "Copper")
 
 st.divider()
 
