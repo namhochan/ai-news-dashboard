@@ -1,13 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-AI 뉴스리포트 – 개선 풀버전
-- 💥 카테고리 클릭 에러 해결 (세션 상태/위젯 key/안정 인덱싱)
-- 📰 뉴스 표시 모드: '제목만' 또는 '간략(제목+요약)' 토글
-- 🔗 뉴스기반 테마요약: sample_link를 클릭 가능한 href로 표시
-- 💹 대표 종목 시세 UI 강화(카드형/호버/간격/가독성)
-- 🧾 '전체 요약문 보기' 가독성 개선(행간/글머리/폰트톤)
-- 📌 우측 고정 퀵 메뉴바(해당 섹션으로 바로 스크롤 이동)
-- 기존 기능(티커바/테마강도/유망Top5/3일예측/테마관리자) 유지
+AI 뉴스리포트 – 컴팩트 뉴스/슬림 퀵메뉴 반영 버전
 """
 
 import math, re, json, base64
@@ -35,56 +28,62 @@ st.set_page_config(page_title="AI 뉴스리포트 – 자동 테마·시세 예�
 GLOBAL_CSS = """
 <style>
 /* 본문 가독성 */
-.block-container { padding-top: 1.2rem; padding-bottom: 3rem; }
+.block-container { padding-top: 1.0rem; padding-bottom: 2.4rem; }
 h2, h3 { letter-spacing: -0.3px; }
 
 /* 링크 톤 */
 a, a:visited { color: #7aa2ff; text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-/* 우측 퀵메뉴 바 */
+/* 우측 퀵메뉴 바 (슬림) */
 .quick-nav {
-  position: fixed; right: 18px; top: 96px; z-index: 9999;
-  width: 240px; max-height: 80vh; overflow:auto;
-  background:#0f1420; border:1px solid #2b3a55; border-radius: 12px; padding: 10px 12px;
-  box-shadow: 0 8px 22px rgba(0,0,0,0.25);
+  position: fixed; right: 12px; top: 92px; z-index: 9999;
+  width: 176px; max-height: 74vh; overflow:auto;
+  background:#0f1420; border:1px solid #2b3a55; border-radius: 10px;
+  padding: 8px 8px; box-shadow: 0 6px 18px rgba(0,0,0,0.24);
 }
-.quick-nav h4 { margin: 6px 6px 10px; font-size: 0.95rem; color:#cbd5e1 }
+.quick-nav h4 { margin: 4px 6px 6px; font-size: 0.88rem; color:#cbd5e1 }
 .quick-nav a {
-  display:block; padding:8px 10px; margin:6px;
-  font-size:0.9rem; color:#9fb3c8; border-radius:8px; border:1px solid #223050;
+  display:block; padding:6px 8px; margin:4px 6px;
+  font-size:0.85rem; color:#9fb3c8; border-radius:8px; border:1px solid #223050;
   background:#0b1220;
 }
 .quick-nav a:hover { background:#0f1a2c; border-color:#2a3b5e; color:#cfe3ff }
 
 /* 티커바 */
 .ticker-wrap{overflow:hidden;width:100%;border:1px solid #263042;border-radius:10px;background:#0f1420}
-.ticker-track{display:flex;gap:16px;align-items:center;width:max-content;will-change:transform;animation:ticker-scroll var(--speed,30s) linear infinite}
+.ticker-track{display:flex;gap:16px;align-items:center;width:max-content;will-change:transform;animation:ticker-scroll var(--speed,28s) linear infinite}
 @keyframes ticker-scroll{0%{transform:translateX(0)}100%{transform:translateX(-50%)}}
 .badge{display:inline-flex;align-items:center;gap:8px;background:#0f1420;border:1px solid #2b3a55;color:#c7d2fe;padding:6px 10px;border-radius:8px;font-weight:700;white-space:nowrap}
 .badge .name{color:#9fb3c8;font-weight:600}
-.badge .up{color:#e66}.badge .down{color:#6aa2ff}.sep{color:#44526b;padding:0 6px}
+.badge .up{color:#d93025}.badge .down{color:#1a73e8}.sep{color:#44526b;padding:0 6px}
 
 /* 대표 종목 카드 */
-.card-grid { display:grid; gap:14px; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); }
+.card-grid { display:grid; gap:12px; grid-template-columns: repeat(auto-fit, minmax(170px,1fr)); }
 .stock-card {
-  border:1px solid #22324a; background:#0f1420; border-radius:14px; padding:10px 12px;
+  border:1px solid #22324a; background:#0f1420; border-radius:12px; padding:10px 12px;
   transition: transform .08s ease, border-color .08s ease, background .08s ease;
 }
 .stock-card:hover { transform: translateY(-2px); border-color:#2d456a; background:#111a2a; }
 .stock-card .nm { font-weight:700; }
-.stock-card .ticker { color:#90a4bf; font-size:0.82rem;}
-.stock-card .px { font-size:1.06rem; margin-top:4px; }
+.stock-card .ticker { color:#90a4bf; font-size:0.8rem;}
+.stock-card .px { font-size:1.02rem; margin-top:4px; }
 .stock-card .up { color:#d93025 }   /* 빨강 */
 .stock-card .down { color:#1a73e8 } /* 파랑 */
 .stock-card .flat { color:#9aa0a6 }
 
 /* 요약 가독성 */
-.readable p, .readable li { line-height: 1.55; color:#cdd6e4; }
+.readable p, .readable li { line-height: 1.52; color:#cdd6e4; }
 .readable ul { margin:0 0 0.2rem 0.9rem; }
 
 /* 작은 캡션 */
-.small-cap { color:#9aa0a6; font-size:0.88rem; }
+.small-cap { color:#9aa0a6; font-size:0.86rem; }
+
+/* 뉴스 컴팩트 리스트 */
+.news-compact { margin-top: .2rem; }
+.news-compact .item { padding: 3px 0 1px 0; margin: 0; }
+.news-compact .ttl  { font-weight: 700; }
+.news-compact .dt   { color:#9aa0a6; font-size:.84rem; }
 </style>
 """
 st.markdown(GLOBAL_CSS, unsafe_allow_html=True)
@@ -123,79 +122,45 @@ def valid_prices(last, prev):
 # 테마 설정 저장/로드
 # =========================
 THEME_STORE_PATH = Path("themes.json")
-
 DEFAULT_THEME_CFG = {
-    "AI": {
-        "keywords": ["ai", "인공지능", "생성형", "챗봇", "엔비디아", "오픈ai", "gpu"],
-        "stocks": [
-            {"name":"삼성전자","ticker":"005930.KS"},
-            {"name":"네이버","ticker":"035420.KS"},
-            {"name":"카카오","ticker":"035720.KS"},
-        ],
-    },
-    "반도체": {
-        "keywords": ["반도체","hbm","메모리","파운드리","칩","램","소부장"],
-        "stocks": [
-            {"name":"SK하이닉스","ticker":"000660.KS"},
-            {"name":"DB하이텍","ticker":"000990.KS"},
-            {"name":"리노공업","ticker":"058470.KQ"},
-        ],
-    },
-    "전력": {
-        "keywords": ["전력","송전","배전","송배전","전력망","hvdc","한국전력","한전kps","한전기술","전선","케이블"],
-        "stocks": [
-            {"name":"한국전력","ticker":"015760.KS"},
-            {"name":"한전KPS","ticker":"051600.KS"},
-            {"name":"한전기술","ticker":"052690.KS"},
-            {"name":"대한전선","ticker":"001440.KS"},
-            {"name":"LS ELECTRIC","ticker":"010120.KS"},
-        ],
-    },
-    "에너지": {
-        "keywords": ["에너지","정유","전력","태양광","풍력","가스"],
-        "stocks": [
-            {"name":"두산에너빌리티","ticker":"034020.KS"},
-            {"name":"한화솔루션","ticker":"009830.KS"},
-            {"name":"GS","ticker":"078930.KS"},
-        ],
-    },
-    "조선": {
-        "keywords": ["조선","선박","lng선","해운"],
-        "stocks": [
-            {"name":"HD한국조선해양","ticker":"009540.KS"},
-            {"name":"HD현대미포","ticker":"010620.KS"},
-            {"name":"한화오션","ticker":"042660.KS"},
-            {"name":"삼성중공업","ticker":"010140.KS"},
-        ],
-    },
-    "원전": {
-        "keywords": ["원전","smr","원자력","우라늄"],
-        "stocks": [
-            {"name":"두산에너빌리티","ticker":"034020.KS"},
-            {"name":"우진","ticker":"105840.KQ"},
-            {"name":"한전KPS","ticker":"051600.KS"},
-            {"name":"보성파워텍","ticker":"006910.KQ"},
-        ],
-    },
-    "이차전지": {
-        "keywords": ["배터리","이차전지","전고체","양극재","음극재","lfp"],
-        "stocks": [
-            {"name":"LG에너지솔루션","ticker":"373220.KS"},
-            {"name":"포스코퓨처엠","ticker":"003670.KS"},
-            {"name":"에코프로","ticker":"086520.KQ"},
-        ],
-    },
-    "바이오": {
-        "keywords": ["바이오","제약","신약","임상"],
-        "stocks": [
-            {"name":"셀트리온","ticker":"068270.KS"},
-            {"name":"에스티팜","ticker":"237690.KQ"},
-            {"name":"알테오젠","ticker":"196170.KQ"},
-            {"name":"메디톡스","ticker":"086900.KQ"},
-        ],
-    },
+    "AI": {"keywords": ["ai","인공지능","생성형","챗봇","엔비디아","오픈ai","gpu"],
+           "stocks": [{"name":"삼성전자","ticker":"005930.KS"},
+                      {"name":"네이버","ticker":"035420.KS"},
+                      {"name":"카카오","ticker":"035720.KS"}]},
+    "반도체":{"keywords":["반도체","hbm","메모리","파운드리","칩","램","소부장"],
+           "stocks":[{"name":"SK하이닉스","ticker":"000660.KS"},
+                     {"name":"DB하이텍","ticker":"000990.KS"},
+                     {"name":"리노공업","ticker":"058470.KQ"}]},
+    "전력":{"keywords":["전력","송전","배전","송배전","전력망","hvdc","한국전력","한전kps","한전기술","전선","케이블"],
+           "stocks":[{"name":"한국전력","ticker":"015760.KS"},
+                     {"name":"한전KPS","ticker":"051600.KS"},
+                     {"name":"한전기술","ticker":"052690.KS"},
+                     {"name":"대한전선","ticker":"001440.KS"},
+                     {"name":"LS ELECTRIC","ticker":"010120.KS"}]},
+    "에너지":{"keywords":["에너지","정유","전력","태양광","풍력","가스"],
+           "stocks":[{"name":"두산에너빌리티","ticker":"034020.KS"},
+                     {"name":"한화솔루션","ticker":"009830.KS"},
+                     {"name":"GS","ticker":"078930.KS"}]},
+    "조선":{"keywords":["조선","선박","lng선","해운"],
+           "stocks":[{"name":"HD한국조선해양","ticker":"009540.KS"},
+                     {"name":"HD현대미포","ticker":"010620.KS"},
+                     {"name":"한화오션","ticker":"042660.KS"},
+                     {"name":"삼성중공업","ticker":"010140.KS"}]},
+    "원전":{"keywords":["원전","smr","원자력","우라늄"],
+           "stocks":[{"name":"두산에너빌리티","ticker":"034020.KS"},
+                     {"name":"우진","ticker":"105840.KQ"},
+                     {"name":"한전KPS","ticker":"051600.KS"},
+                     {"name":"보성파워텍","ticker":"006910.KQ"}]},
+    "이차전지":{"keywords":["배터리","이차전지","전고체","양극재","음극재","lfp"],
+           "stocks":[{"name":"LG에너지솔루션","ticker":"373220.KS"},
+                     {"name":"포스코퓨처엠","ticker":"003670.KS"},
+                     {"name":"에코프로","ticker":"086520.KQ"}]},
+    "바이오":{"keywords":["바이오","제약","신약","임상"],
+           "stocks":[{"name":"셀트리온","ticker":"068270.KS"},
+                     {"name":"에스티팜","ticker":"237690.KQ"},
+                     {"name":"알테오젠","ticker":"196170.KQ"},
+                     {"name":"메디톡스","ticker":"086900.KQ"}]},
 }
-
 def load_theme_config() -> dict:
     if THEME_STORE_PATH.exists():
         try:
@@ -203,17 +168,13 @@ def load_theme_config() -> dict:
         except Exception:
             st.warning("themes.json 읽기 실패 — 기본값으로 초기화합니다.")
     return DEFAULT_THEME_CFG.copy()
-
 def save_theme_config(cfg: dict):
     THEME_STORE_PATH.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-
 def push_to_github_file(cfg: dict) -> bool:
     try:
-        token = st.secrets.get("GITHUB_TOKEN")
-        repo  = st.secrets.get("THEME_REPO")
+        token = st.secrets.get("GITHUB_TOKEN"); repo  = st.secrets.get("THEME_REPO")
         path  = st.secrets.get("THEME_PATH", "themes.json")
-        if not token or not repo:
-            return False
+        if not token or not repo: return False
         import requests
         api = f"https://api.github.com/repos/{repo}/contents/{path}"
         r = requests.get(api, headers={"Authorization": f"token {token}"})
@@ -226,12 +187,10 @@ def push_to_github_file(cfg: dict) -> bool:
         return r2.status_code in (200, 201)
     except Exception:
         return False
-
 def cfg_to_maps(cfg: dict):
     kws_map = {t: v.get("keywords", []) for t, v in cfg.items()}
     stocks_map = {t: [(s["name"], s["ticker"]) for s in v.get("stocks", [])] for t, v in cfg.items()}
     return kws_map, stocks_map
-
 if "theme_cfg" not in st.session_state:
     st.session_state.theme_cfg = load_theme_config()
 THEME_KEYWORDS, THEME_STOCKS = cfg_to_maps(st.session_state.theme_cfg)
@@ -243,15 +202,12 @@ def fetch_quote(ticker: str):
     try:
         t = yf.Ticker(ticker)
         last, prev = getattr(t.fast_info, "last_price", None), getattr(t.fast_info, "previous_close", None)
-        if valid_prices(last, prev):
-            return float(last), float(prev)
-    except Exception:
-        pass
+        if valid_prices(last, prev): return float(last), float(prev)
+    except Exception: pass
     try:
         df = yf.download(ticker, period="7d", interval="1d", progress=False, auto_adjust=False)
         c = df.get("Close")
-        if c is None or c.dropna().empty:
-            return None, None
+        if c is None or c.dropna().empty: return None, None
         c = c.dropna()
         last, prev = float(c.iloc[-1]), (float(c.iloc[-2]) if len(c) >= 2 else None)
         return (last, prev) if valid_prices(last, prev) else (None, None)
@@ -262,20 +218,16 @@ def clean_html(raw):
     return BeautifulSoup(raw or "", "html.parser").get_text(" ", strip=True)
 
 def _parse_entries(feed, days):
-    now = datetime.now(KST)
-    out = []
+    now = datetime.now(KST); out = []
     for e in feed.entries:
         t = None
-        if getattr(e, "published_parsed", None):
-            t = datetime(*e.published_parsed[:6], tzinfo=KST)
-        elif getattr(e, "updated_parsed", None):
-            t = datetime(*e.updated_parsed[:6], tzinfo=KST)
-        if t and (now - t) > timedelta(days=days):  # 기간 필터
-            continue
-        title, link = e.get("title", "").strip(), e.get("link", "").strip()
+        if getattr(e, "published_parsed", None): t = datetime(*e.published_parsed[:6], tzinfo=KST)
+        elif getattr(e, "updated_parsed", None): t = datetime(*e.updated_parsed[:6], tzinfo=KST)
+        if t and (now - t) > timedelta(days=days): continue
+        title, link = e.get("title","").strip(), e.get("link","").strip()
         if link.startswith("./"): link = "https://news.google.com/" + link[2:]
-        desc = clean_html(e.get("summary", ""))
-        out.append({"title": title, "link": link, "time": t.strftime("%Y-%m-%d %H:%M") if t else "-", "desc": desc})
+        desc = clean_html(e.get("summary",""))
+        out.append({"title":title, "link":link, "time":t.strftime("%Y-%m-%d %H:%M") if t else "-", "desc":desc})
     return out
 
 def fetch_google_news_by_keyword(keyword, days=3, limit=40):
@@ -298,11 +250,9 @@ def fetch_category_news(cat, days=3, max_items=100):
         try:
             for it in fetch_google_news_by_keyword(kw, days):
                 k = (it["title"], it["link"])
-                if k in seen: 
-                    continue
+                if k in seen: continue
                 seen.add(k); out.append(it)
-        except Exception:
-            continue
+        except Exception: continue
     def key(x):
         try: return datetime.strptime(x["time"], "%Y-%m-%d %H:%M")
         except: return datetime.min
@@ -320,14 +270,14 @@ news_cache = load_all_news_3days()
 QUICK_MENU_HTML = """
 <div class="quick-nav">
   <h4>Quick Menu</h4>
-  <a href="#sec-ticker">📊 오늘의 시장 요약</a>
+  <a href="#sec-ticker">📊 시장 요약</a>
   <a href="#sec-latest-news">📰 최신 뉴스</a>
-  <a href="#sec-theme">🔥 뉴스 기반 테마 요약</a>
-  <a href="#sec-ai-sum">🧠 AI 뉴스 요약엔진</a>
-  <a href="#sec-theme-score">📊 AI 상승 확률 리포트</a>
-  <a href="#sec-top5">🚀 오늘의 AI 유망 종목 Top5</a>
+  <a href="#sec-theme">🔥 테마 요약</a>
+  <a href="#sec-ai-sum">🧠 뉴스 요약엔진</a>
+  <a href="#sec-theme-score">📈 상승 확률</a>
+  <a href="#sec-top5">🚀 유망 Top5</a>
   <a href="#sec-predict">🔮 3일 예측</a>
-  <a href="#sec-admin">🛠 테마 관리자</a>
+  <a href="#sec-admin">🛠 테마 관리</a>
 </div>
 """
 st.markdown(QUICK_MENU_HTML, unsafe_allow_html=True)
@@ -347,15 +297,10 @@ def build_ticker_items():
         last, prev = fetch_quote(ticker)
         d, p = None, None
         if valid_prices(last, prev):
-            d = last - prev
-            p = (d / prev) * 100
-        items.append({
-            "name": name,
-            "last": fmt_number(last, dp),
-            "pct": fmt_percent(p) if p is not None else "--",
-            "is_up": (d or 0) > 0,
-            "is_down": (d or 0) < 0
-        })
+            d = last - prev; p = (d / prev) * 100
+        items.append({"name":name,"last":fmt_number(last, dp),
+                      "pct": fmt_percent(p) if p is not None else "--",
+                      "is_up":(d or 0)>0,"is_down":(d or 0)<0})
     return items
 
 def render_ticker_line(items, speed_sec=28):
@@ -371,59 +316,52 @@ def render_ticker_line(items, speed_sec=28):
     with col1: st.markdown("### 📊 오늘의 시장 요약")
     with col2:
         if st.button("🔄 새로고침", key="btn_refresh_ticker"):
-            st.cache_data.clear()
-            st.rerun()
+            st.cache_data.clear(); st.rerun()
     st.markdown(html, unsafe_allow_html=True)
     st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (지연 가능)")
 
 render_ticker_line(build_ticker_items())
 
 # =========================
-# 2) 최신 뉴스 (카테고리/표시모드)
+# 2) 최신 뉴스 (컴팩트: 제목 + 날짜/시간)
 # =========================
 st.markdown('<div id="sec-latest-news"></div>', unsafe_allow_html=True)
 st.divider()
 st.markdown("## 📰 최신 뉴스")
 
-# ✔ 카테고리 클릭 에러 방지: 세션 상태로 현재 선택 보존 + 확정된 옵션 리스트
 cat_options = list(CATEGORIES.keys())
 if "cur_cat" not in st.session_state:
     st.session_state.cur_cat = cat_options[0]
 
-c1, c2, c3 = st.columns([2, 1, 1])
+c1, c2 = st.columns([2, 1])
 with c1:
-    cur_cat = st.selectbox("📂 카테고리 선택", options=cat_options, index=cat_options.index(st.session_state.cur_cat), key="sel_cat")
+    cur_cat = st.selectbox("📂 카테고리 선택", options=cat_options,
+                           index=cat_options.index(st.session_state.cur_cat), key="sel_cat_compact")
     st.session_state.cur_cat = cur_cat
 with c2:
-    page = st.number_input("페이지", min_value=1, value=1, step=1, key="news_page")
-with c3:
-    mode = st.radio("표시 모드", options=["제목만", "간략"], horizontal=False, key="news_mode")
+    page = st.number_input("페이지", min_value=1, value=1, step=1, key="news_page_compact")
 
 news_all = news_cache.get(st.session_state.cur_cat, [])
 page_size = 10
-start, end = (page-1)*page_size, (page)*page_size
+start, end = (page-1)*page_size, page*page_size
 news_page = news_all[start:end]
 
 if not news_page:
     st.info("표시할 뉴스가 없습니다. (최근 3일 결과 없음)")
 else:
+    st.markdown("<div class='news-compact'>", unsafe_allow_html=True)
     for i, n in enumerate(news_page, start=start+1):
-        title = n["title"]; link = n["link"]; when = n["time"]; desc = n["desc"]
-        if mode == "제목만":
-            st.markdown(f"**{i}. <a href='{link}' target='_blank'>{title}</a>**  \n"
-                        f"<span class='small-cap'>{when}</span>", unsafe_allow_html=True)
-        else:
-            short = (desc[:180] + "…") if len(desc) > 200 else desc
-            st.markdown(f"**{i}. <a href='{link}' target='_blank'>{title}</a>**  \n"
-                        f"<span class='small-cap'>{when}</span><br>"
-                        f"<span style='color:#aeb8c5'>{short}</span>",
-                        unsafe_allow_html=True)
-        st.markdown("<hr style='border:0;border-top:1px solid #1f2937'/>", unsafe_allow_html=True)
+        title = n.get("title","-"); link  = n.get("link",""); when  = n.get("time","-")
+        st.markdown(
+            f"<div class='item'><a class='ttl' href='{link}' target='_blank'>{i}. {title}</a><br>"
+            f"<span class='dt'>{when}</span></div>", unsafe_allow_html=True
+        )
+    st.markdown("</div>", unsafe_allow_html=True)
 
-st.caption(f"최근 3일 · {st.session_state.cur_cat} · 총 {len(news_all)}건 중 {start+1}–{min(end,len(news_all))} 표시")
+st.caption(f"최근 3일 · {st.session_state.cur_cat} · 총 {len(news_all)}건 중 {start+1}–{min(end, len(news_all))} 표시")
 
 # =========================
-# 3) 테마 감지(뉴스+가격) + 샘플링크/대표종목
+# 3) 테마 감지(뉴스+가격) + 링크/대표종목
 # =========================
 st.markdown('<div id="sec-theme"></div>', unsafe_allow_html=True)
 st.divider()
@@ -470,32 +408,24 @@ def detect_themes_hybrid(news_list, theme_kws:dict, price_boost=True, pct_thresh
     rows.sort(key=lambda x:(x["뉴스건수"], x["평균등락(%)"]), reverse=True)
     return rows
 
-# 통합 뉴스로 감지
-all_news=[]
-for lst in news_cache.values(): all_news.extend(lst)
+all_news=[]; [all_news.extend(v) for v in news_cache.values()]
 theme_rows = detect_themes_hybrid(all_news, THEME_KEYWORDS, True, 2.0, 2)
 
 if not theme_rows:
     st.info("최근 3일 기준 테마 신호가 약합니다. (뉴스/가격 모두 약함)")
 else:
-    # 🔗 샘플링크를 클릭 가능한 링크컬럼으로
     df_theme = pd.DataFrame(theme_rows)
-    # 링크 칼럼을 사람이 보게 별도 칼럼 생성
     df_theme["링크"] = df_theme["샘플링크"].apply(lambda u: u if isinstance(u,str) and u else "")
-    # Streamlit 1.30+에서 LinkColumn 사용 가능. 사용 불가 환경일 경우 아래 fallback 렌더 사용.
     try:
         st.dataframe(
             df_theme.drop(columns=["샘플링크"]),
             use_container_width=True, hide_index=True,
-            column_config={
-                "링크": st.column_config.LinkColumn("샘플 뉴스", display_text="열기", help="클릭 시 새 탭에서 열립니다.")
-            }
+            column_config={"링크": st.column_config.LinkColumn("샘플 뉴스", display_text="열기")}
         )
     except Exception:
         st.dataframe(df_theme.drop(columns=["샘플링크"]), use_container_width=True, hide_index=True)
         st.caption("※ 샘플 뉴스 링크는 표의 '링크' 칼럼 URL을 클릭하세요.")
 
-    # 대표 종목 카드형 UI
     st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
     def rep_price(tk):
         last, prev = fetch_quote(tk)
@@ -504,7 +434,6 @@ else:
         tone = "up" if delta>0 else ("down" if delta<0 else "flat")
         return fmt_number(last,0), fmt_percent(delta), tone
 
-    # 상위 5개 테마만 샘플 카드
     top5 = df_theme.head(5).to_dict("records")
     for tr in top5:
         theme = tr["테마"]; stocks = THEME_STOCKS.get(theme, [])[:6]
@@ -525,14 +454,12 @@ else:
 # 4) AI 뉴스 요약엔진 (가독성 업)
 # =========================
 st.markdown('<div id="sec-ai-sum"></div>', unsafe_allow_html=True)
-st.divider()
-st.markdown("## 🧠 AI 뉴스 요약엔진")
+st.divider(); st.markdown("## 🧠 AI 뉴스 요약엔진")
 
 titles=[n["title"] for lst in news_cache.values() for n in lst[:60]]
 words=[]
 for t in titles:
-    t=re.sub(r"[^가-힣A-Za-z0-9\s]"," ",t)
-    words += [w for w in t.split() if len(w)>=2]
+    t=re.sub(r"[^가-힣A-Za-z0-9\s]"," ",t); words += [w for w in t.split() if len(w)>=2]
 top_kw=[w for w,_ in Counter(words).most_common(10)]
 
 st.markdown("### 📌 핵심 키워드 TOP10")
@@ -556,14 +483,11 @@ else:
 # 5) 테마별 상승 확률 리포트
 # =========================
 st.markdown('<div id="sec-theme-score"></div>', unsafe_allow_html=True)
-st.divider()
-st.markdown("## 📊 AI 상승 확률 예측 리포트")
+st.divider(); st.markdown("## 📈 AI 상승 확률 예측 리포트")
 
 def calc_theme_strength(count, avg_delta):
-    freq_score = min(count/20, 1.0)
-    price_score = min(max((avg_delta+5)/10, 0), 1.0)
+    freq_score = min(count/20, 1.0); price_score = min(max((avg_delta+5)/10, 0), 1.0)
     return round((freq_score*0.6 + price_score*0.4) * 5, 1)
-
 def calc_risk_level(avg_delta):
     if avg_delta >= 3: return 1
     if avg_delta >= 1: return 2
@@ -578,8 +502,7 @@ if theme_rows:
         deltas=[]
         for _, tk in stocks:
             last, prev = fetch_quote(tk)
-            if valid_prices(last, prev):
-                deltas.append((last-prev)/prev*100)
+            if valid_prices(last, prev): deltas.append((last-prev)/prev*100)
         avg_delta=float(np.mean(deltas)) if deltas else 0.0
         report_rows.append({
             "테마": theme,
@@ -598,8 +521,7 @@ else:
 # 6) 유망 종목 Top5
 # =========================
 st.markdown('<div id="sec-top5"></div>', unsafe_allow_html=True)
-st.divider()
-st.markdown("## 🚀 오늘의 AI 유망 종목 Top5")
+st.divider(); st.markdown("## 🚀 오늘의 AI 유망 종목 Top5")
 
 def pick_promising_stocks(theme_rows, top_n=5):
     candidates=[]
@@ -607,8 +529,7 @@ def pick_promising_stocks(theme_rows, top_n=5):
         theme=tr["테마"]
         for name, tk in THEME_STOCKS.get(theme, []):
             last, prev = fetch_quote(tk)
-            if not valid_prices(last, prev): 
-                continue
+            if not valid_prices(last, prev): continue
             delta=(last-prev)/prev*100
             score = tr["뉴스건수"]*0.3 + delta*0.7
             candidates.append({"테마":theme,"종목명":name,"등락률(%)":round(delta,2),
@@ -635,59 +556,40 @@ else:
 # 7) 3일 예측(로지스틱)
 # =========================
 st.markdown('<div id="sec-predict"></div>', unsafe_allow_html=True)
-st.divider()
-st.markdown("## 🔮 AI 3일 예측: 내일 오를 확률")
+st.divider(); st.markdown("## 🔮 AI 3일 예측: 내일 오를 확률")
 
 @st.cache_data(ttl=600)
 def load_hist(ticker: str, period="2y"):
     df = yf.download(ticker, period=period, interval="1d", auto_adjust=True, progress=False)
     return df[~df.index.duplicated(keep='last')].dropna()
-
 def rsi(series: pd.Series, period: int = 14):
-    delta = series.diff()
-    up = np.where(delta>0, delta, 0.0)
-    down = np.where(delta<0, -delta, 0.0)
+    delta = series.diff(); up = np.where(delta>0, delta, 0.0); down = np.where(delta<0, -delta, 0.0)
     roll_up = pd.Series(up, index=series.index).rolling(period).mean()
     roll_down = pd.Series(down, index=series.index).rolling(period).mean()
     rs = roll_up / (roll_down.replace(0, np.nan))
     return (100 - (100 / (1 + rs))).fillna(50)
-
 def macd(series: pd.Series, fast=12, slow=26, signal=9):
     ema_fast = series.ewm(span=fast, adjust=False).mean()
     ema_slow = series.ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    macd_line = ema_fast - ema_slow; signal_line = macd_line.ewm(span=signal, adjust=False).mean()
     return macd_line, signal_line, macd_line - signal_line
-
 def build_features(df: pd.DataFrame):
-    price = df["Close"]
-    feat = pd.DataFrame(index=df.index)
-    feat["ret_1d"] = price.pct_change(1)
-    feat["ret_5d"] = price.pct_change(5)
-    feat["ret_10d"] = price.pct_change(10)
-    feat["vol_5d"] = price.pct_change().rolling(5).std()
-    feat["vol_20d"] = price.pct_change().rolling(20).std()
-    feat["rsi_14"] = rsi(price, 14)
-    macd_line, sig, hist = macd(price)
+    price = df["Close"]; feat = pd.DataFrame(index=df.index)
+    feat["ret_1d"] = price.pct_change(1);  feat["ret_5d"] = price.pct_change(5);  feat["ret_10d"] = price.pct_change(10)
+    feat["vol_5d"] = price.pct_change().rolling(5).std(); feat["vol_20d"] = price.pct_change().rolling(20).std()
+    feat["rsi_14"] = rsi(price, 14); macd_line, sig, hist = macd(price)
     feat["macd"] = macd_line; feat["macd_sig"] = sig; feat["macd_hist"] = hist
     ma5=price.rolling(5).mean(); ma20=price.rolling(20).mean()
     feat["ma5_gap"] = (price-ma5)/ma5; feat["ma20_gap"] = (price-ma20)/ma20
     y = (price.shift(-1) > price).astype(int)
     return pd.concat([feat, y.rename("y")], axis=1).dropna()
-
 def fit_predict_prob(df_feat: pd.DataFrame):
     if len(df_feat) < 120: return None, None
-    data = df_feat.tail(300)
-    X = data.drop(columns=["y"]).values
-    y = data["y"].values
-    n = len(data); split = max(60, n-3)
-    X_train, y_train, X_pred = X[:split], y[:split], X[split:]
-    model = LogisticRegression(max_iter=200)
-    model.fit(X_train, y_train)
+    data = df_feat.tail(300); X = data.drop(columns=["y"]).values; y = data["y"].values
+    n = len(data); split = max(60, n-3); X_train, y_train, X_pred = X[:split], y[:split], X[split:]
+    model = LogisticRegression(max_iter=200); model.fit(X_train, y_train)
     prob = model.predict_proba(X_pred)[:,1]
-    p_tomorrow = float(prob[0]) if len(prob)>0 else None
-    p_3avg = float(prob.mean()) if len(prob)>0 else None
-    return p_tomorrow, p_3avg
+    return (float(prob[0]) if len(prob)>0 else None, float(prob.mean()) if len(prob)>0 else None)
 
 rows=[]
 if recommend_df.empty:
@@ -701,8 +603,7 @@ else:
                 if hist.empty:
                     rows.append({"종목명":name,"티커":tk,"내일상승확률":"-","3일평균확률":"-","신호":"데이터부족"})
                     continue
-                feats = build_features(hist)
-                p1, p3 = fit_predict_prob(feats)
+                feats = build_features(hist); p1, p3 = fit_predict_prob(feats)
                 if p1 is None:
                     rows.append({"종목명":name,"티커":tk,"내일상승확률":"-","3일평균확률":"-","신호":"데이터부족"})
                 else:
@@ -711,7 +612,6 @@ else:
                                  "3일평균확률":round(p3*100,1),"신호":signal})
             except Exception:
                 rows.append({"종목명":name,"티커":tk,"내일상승확률":"-","3일평균확률":"-","신호":"오류"})
-
 pred_df = pd.DataFrame(rows)
 if not pred_df.empty:
     def _prob_color(v):
@@ -739,16 +639,13 @@ st.caption("※ 간단한 로지스틱 회귀 기반 참고지표입니다. 투�
 # 8) 테마 관리자 (저장 UI)
 # =========================
 st.markdown('<div id="sec-admin"></div>', unsafe_allow_html=True)
-st.divider()
-st.markdown("## 🛠 테마 관리자")
+st.divider(); st.markdown("## 🛠 테마 관리자")
 
 theme_cfg: dict = st.session_state.theme_cfg
 left, right = st.columns([1,2])
-
 with left:
     st.markdown("**테마 선택/추가**")
     names = sorted(theme_cfg.keys())
-    default_idx = 0
     if "admin_selected" not in st.session_state:
         st.session_state.admin_selected = "(새로 만들기)"
     select_options = ["(새로 만들기)"] + names
@@ -759,7 +656,6 @@ with left:
     selected = st.selectbox("테마", options=select_options, index=default_idx, key="admin_sel")
     st.session_state.admin_selected = selected
     new_name = st.text_input("테마 이름", value="" if selected=="(새로 만들기)" else selected)
-
 with right:
     st.markdown("**키워드 & 종목 편집**")
     cur = theme_cfg.get(selected, {"keywords":[], "stocks":[]}) if selected!="(새로 만들기)" else {"keywords":[], "stocks":[]}
@@ -771,7 +667,6 @@ with right:
         placeholder="예)\n한국전력,015760.KS\n한전KPS,051600.KS",
         key="admin_stocks"
     )
-
     c1,c2,c3 = st.columns(3)
     with c1:
         if st.button("💾 저장/업데이트", key="btn_admin_save"):
@@ -811,4 +706,4 @@ with right:
             data=json.dumps(theme_cfg, ensure_ascii=False, indent=2),
             file_name="themes.json",
             mime="application/json",
-)
+      )
