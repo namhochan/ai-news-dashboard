@@ -18,7 +18,9 @@
     "stocks": [
       "HD현대중공업",
       "대한조선",
-      "삼성중공업"
+      "삼성중공업",
+      "한국카본",
+      "HSD엔진"
     ],
     "news_link": "https://news.google.com/?hl=ko&gl=KR&ceid=KR:ko"
   },
@@ -30,7 +32,8 @@
       "씨아이에스",
       "엠플러스",
       "천보",
-      "코스모신소재"
+      "코스모신소재",
+      "에코프로비엠"
     ],
     "news_link": "https://news.google.com/?hl=ko&gl=KR&ceid=KR:ko"
   },
@@ -52,7 +55,8 @@
     "stocks": [
       "두산에너빌리티",
       "보성파워텍",
-      "한신기계"
+      "한신기계",
+      "일진파워"
     ],
     "news_link": "https://news.google.com/?hl=ko&gl=KR&ceid=KR:ko"
   }
