@@ -2,8 +2,8 @@
   "themes": [
     {
       "theme": "AI",
-      "count": 8,
-      "score": 8,
+      "count": 10,
+      "score": 10,
       "rep_stocks": "삼성전자, 네이버, 카카오, 더존비즈온, 티맥스소프트",
       "sample_link": "https://news.google.com/rss/articles/CBMic0FVX3lxTFBRUkVPeGFRYmV1cFlSeWUxWGFudjV4SFpQNFJKUm9JQjNGMzBTQ29jOEt3aFc5WnlGRnZ0YjNGSXl1VGxYaFpmU0NWTExmUWFXR1lRWVZzbVpmSTB3eklIai11R2YxaklBd1BfVkJycmNWTUE?oc=5"
     },
@@ -33,7 +33,7 @@
       "count": 1,
       "score": 1,
       "rep_stocks": "LG에너지솔루션, 포스코퓨처엠, 에코프로, 에코프로비엠, 엘앤에프",
-      "sample_link": "https://news.google.com/rss/articles/CBMiT0FVX3lxTE1IeFEycWtLSGxtLU5JekZQUXFmOXlqYnZYc1Q1RGo4Z2N1a2h4aFdPb0l1YUF0Q2h0MlV1b0trSldYbHBqMDY2Q0VMMU5CUVE?oc=5"
+      "sample_link": "https://news.google.com/rss/articles/CBMiaEFVX3lxTFB5Vkl5M1FsRkZaZS1UUXRlZ21tREpGbGZvbmc3TFNvazlnR3RJT1hNTlpNYU9JQ1g1NjRqYU00ZWs5ZjQ0QVU5OW0ySzZwdkNfNHhuMzhEdEFhcEVPbWJ0OHlHLWtwZVNl?oc=5"
     }
   ]
 }
