@@ -5,7 +5,12 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 import streamlit as st
 import yfinance as yf
-
+# 헤더/업데이트 시간 아래 쯤에 추가
+col1, col2 = st.columns([1, 5])
+with col1:
+    if st.button("🔄 강제 새로고침", use_container_width=True):
+        st.cache_data.clear()   # 캐시 비우기
+        st.rerun()              # 즉시 다시 실행
 
 # -----------------------------
 # 기본 페이지 설정
