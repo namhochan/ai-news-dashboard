@@ -2,7 +2,7 @@
   "keywords": [
     {
       "keyword": "ai",
-      "count": 6
+      "count": 7
     },
     {
       "keyword": "조선",
@@ -11,6 +11,10 @@
     {
       "keyword": "반도체",
       "count": 2
+    },
+    {
+      "keyword": "수주",
+      "count": 1
     },
     {
       "keyword": "파운드리",
@@ -22,10 +26,6 @@
     },
     {
       "keyword": "이차전지",
-      "count": 1
-    },
-    {
-      "keyword": "수주",
       "count": 1
     },
     {
