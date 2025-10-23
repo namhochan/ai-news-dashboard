@@ -487,3 +487,59 @@ for tr in theme_rows[:5]:
 
 st.dataframe(report_rows, use_container_width=True, hide_index=True)
 st.caption("※ 테마강도↑ = 뉴스 + 가격이 모두 활발한 상태 / 리스크레벨↑ = 변동성·하락 가능성 높음")
+# =====================================
+# 🚀 3단계: AI 유망 종목 자동 추천 (Top5)
+# =====================================
+st.divider()
+st.markdown("## 🚀 오늘의 AI 유망 종목 Top5")
+
+def pick_promising_stocks(theme_rows, top_n=5):
+    """
+    테마 강도 + 평균 등락률을 바탕으로 유망 종목 선별
+    1) 테마강도 높은 순
+    2) 그 테마 내 상승률 상위 종목
+    """
+    candidates = []
+    for tr in theme_rows[:8]:  # 상위 테마 몇 개만
+        theme = tr["theme"]
+        stocks = THEME_STOCKS.get(theme, [])
+        for name, ticker in stocks:
+            try:
+                last, prev = fetch_quote(ticker)
+                if not last or not prev:
+                    continue
+                delta = (last - prev) / prev * 100
+                score = tr["count"] * 0.3 + delta * 0.7
+                candidates.append({
+                    "테마": theme,
+                    "종목명": name,
+                    "등락률(%)": round(delta, 2),
+                    "뉴스빈도": tr["count"],
+                    "AI점수": round(score, 2),
+                    "티커": ticker
+                })
+            except Exception:
+                continue
+
+    df = pd.DataFrame(candidates)
+    if df.empty:
+        return pd.DataFrame()
+    df = df.sort_values(by="AI점수", ascending=False).head(top_n)
+    return df
+
+recommend_df = pick_promising_stocks(theme_rows, top_n=5)
+
+if recommend_df.empty:
+    st.info("추천할 종목이 없습니다. 데이터가 부족하거나 시장 변동성이 낮습니다.")
+else:
+    st.dataframe(recommend_df, use_container_width=True, hide_index=True)
+    st.markdown("### 🧾 AI 종합 판단")
+    for _, row in recommend_df.iterrows():
+        emoji = "🔺" if row["등락률(%)"] > 0 else "🔻"
+        st.markdown(
+            f"**{emoji} {row['종목명']} ({row['티커']})** — "
+            f"테마: *{row['테마']}*, 최근 등락률: **{row['등락률(%)']}%**, "
+            f"뉴스빈도: {row['뉴스빈도']}건, AI점수: {row['AI점수']}"
+        )
+
+st.caption("※ AI점수 = 뉴스활성도 + 주가상승률 기반 유망도 산출")
