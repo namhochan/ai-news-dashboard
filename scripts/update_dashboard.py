@@ -1,10 +1,9 @@
-update: add headlines.json auto generation
-
 import json, os, re
 from datetime import datetime
 from collections import Counter
 import pytz, requests, feedparser, yfinance as yf
 
+# 경로/타임존
 ROOT = os.path.dirname(os.path.dirname(__file__))
 DATA = os.path.join(ROOT, "data")
 KST = pytz.timezone("Asia/Seoul")
@@ -43,7 +42,7 @@ def fetch_market_today():
     out["comment"] = " · ".join(comment) if comment else "혼조 속 개별 모멘텀"
     return out
 
-# ── 2) 뉴스 수집(제목+링크) & 키워드맵
+# ── 2) 뉴스(RSS/옵션:NewsAPI) → 제목+링크 수집
 NEWS_SOURCES = [
     "https://news.google.com/rss/search?q=AI%20반도체&hl=ko&gl=KR&ceid=KR:ko",
     "https://news.google.com/rss/search?q=로봇%20스마트팩토리&hl=ko&gl=KR&ceid=KR:ko",
@@ -66,7 +65,7 @@ def collect_headlines():
                     items.append({"title": title, "url": link})
         except Exception:
             continue
-    # (선택) NewsAPI 보강
+    # 선택: NewsAPI로 보강 (Secrets에 NEWSAPI_KEY 있으면 자동 사용)
     key = os.getenv("NEWSAPI_KEY")
     if key:
         try:
@@ -120,18 +119,22 @@ def main():
     now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
     print(f"[Updater] start @ {now} KST")
 
+    # 1) 시장
     market = fetch_market_today()
     save_json(os.path.join(DATA, "market_today.json"), market)
     print(" - market_today.json updated")
 
+    # 2) 뉴스 헤드라인 저장 (제목+링크)
     heads = collect_headlines()
     save_json(os.path.join(DATA, "headlines.json"), heads[:50])
     print(" - headlines.json updated")
 
+    # 3) 키워드맵
     kw_map = build_keyword_map(heads)
     save_json(os.path.join(DATA, "keyword_map.json"), kw_map)
     print(" - keyword_map.json updated")
 
+    # 4) 테마
     themes = make_theme_top5(kw_map)
     save_json(os.path.join(DATA, "theme_top5.json"), themes)
     print(" - theme_top5.json updated")
