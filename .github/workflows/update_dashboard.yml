@@ -27,6 +27,7 @@ jobs:
 
       - name: Run data pipeline
         run: |
+          python scripts/fetch_market.py
           python scripts/update_dashboard.py
 
       - name: Commit & Push new data
