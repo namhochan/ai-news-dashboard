@@ -1,176 +1,255 @@
-# -*- coding: utf-8 -*-
-import streamlit as st
-import json, os
-import pandas as pd
+# app.py — AI 뉴스리포트 종합 대시보드 (대표 종목/전뉴스 2건 포함)
+# ------------------------------------------------------------------
+# 기대 파일 구조(자동 파이프라인이 주기적으로 생성/갱신):
+# data/
+#   headlines_top10.json       -> {"items":[{"title","link","published"},...]}
+#   news_100.json              -> {"items":[...]}
+#   theme_top5.json            -> {"themes":[{"theme","count","score","rep_stocks","sample_link"},...]}
+#   theme_secondary5.json      -> {"themes":[{"theme","count","score","sample_link"},...]}
+#   keyword_map_month.json     -> {"keywords":[{"keyword","count"},...]}
+#   new_themes.json            -> ["신규 테마1", "신규 테마2", ...]
+#
+# 이 파일만 교체하면 화면에 대표 종목/전뉴스 2건까지 표시됩니다.
+
+from __future__ import annotations
+import os, json, time
 from datetime import datetime, timezone, timedelta
+from typing import Any, Dict, List
+from urllib.parse import quote_plus
 
-# -------------------------------
+import pandas as pd
+import streamlit as st
+import feedparser
+
+# -----------------------------
 # 기본 설정
-# -------------------------------
-st.set_page_config(page_title="AI 뉴스리포트 대시보드", layout="wide")
-st.title("🧠 AI 뉴스리포트 종합 대시보드 (자동 업데이트)")
+# -----------------------------
+st.set_page_config(
+    page_title="AI 뉴스리포트 종합 대시보드",
+    layout="wide",
+)
 
-# -------------------------------
-# 유틸리티 함수
-# -------------------------------
-def safe_load_json(path, default):
-    """JSON 안전 로드 (파일 없거나 포맷 깨져도 기본값 반환)"""
+KST = timezone(timedelta(hours=9))
+
+def kst_now_str() -> str:
+    try:
+        return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S (KST)")
+    except Exception:
+        return "-"
+
+def load_json(path: str, default: Any) -> Any:
+    if not os.path.exists(path):
+        return default
     try:
         with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
+def to_list_of_stocks(rep_field) -> List[str]:
+    """rep_stocks가 문자열/리스트 어떤 형태로 와도 안전하게 리스트로 변환"""
+    if rep_field is None:
+        return []
+    if isinstance(rep_field, list):
+        # 안에 [name] 혹은 [name,code] 형태도 올 수 있으니 첫 항목만 문자열로 표시
+        out = []
+        for x in rep_field:
+            if isinstance(x, list) or isinstance(x, tuple):
+                if x:
+                    out.append(str(x[0]))
+            else:
+                out.append(str(x))
+        return [s.strip() for s in out if s and s.strip()]
+    if isinstance(rep_field, str):
+        return [s.strip() for s in rep_field.split(",") if s.strip()]
+    return []
 
-# -------------------------------
-# ① 시장 요약 (지수 / 환율 / 원자재)
-# -------------------------------
-st.header("📊 오늘의 시장 요약")
+def badge_delta(v: float | None) -> str:
+    """증감 화살표 뱃지 HTML (값이 None이면 '--')"""
+    if v is None:
+        return "<span style='opacity:0.6'>—</span>"
+    if v > 0:
+        return f"<span style='color:#21c55d'>↑ {v:.2f}%</span>"
+    if v < 0:
+        return f"<span style='color:#ef4444'>↓ {abs(v):.2f}%</span>"
+    return "<span>0.00%</span>"
 
-market = safe_load_json("data/market_today.json", {})
-info = market if isinstance(market, dict) else {}
+def fetch_two_news(query: str, lang: str = "ko", gl: str = "KR") -> List[Dict[str, str]]:
+    """
+    구글뉴스 RSS에서 검색어 기준 최신 2건만 가져오기.
+    Streamlit Cloud에서 외부 호출 허용.
+    """
+    try:
+        url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl={lang}&gl={gl}&ceid={gl}:{lang}"
+        feed = feedparser.parse(url)
+        out = []
+        for e in feed.entries[:2]:
+            out.append({"title": e.title, "link": getattr(e, "link", "")})
+        return out
+    except Exception:
+        return []
 
-def format_value(v):
-    if v is None: return "-"
-    try: return f"{float(v):,.2f}"
-    except: return str(v)
+# -----------------------------
+# 헤더
+# -----------------------------
+st.markdown("# 🧠 AI 뉴스리포트 종합 대시보드 (자동 업데이트)")
+st.caption(f"업데이트 시간: {kst_now_str()}")
 
-cols = st.columns(3)
-cols[0].metric("KOSPI", format_value(info.get("kospi", {}).get("value")),
-               f"{info.get('kospi', {}).get('change_pct', '-')}")
-cols[1].metric("KOSDAQ", format_value(info.get("kosdaq", {}).get("value")),
-               f"{info.get('kosdaq', {}).get('change_pct', '-')}")
-cols[2].metric("환율(USD/KRW)", format_value(info.get("usdkrw", {}).get("value")),
-               f"{info.get('usdkrw', {}).get('change_pct', '-')}")
-st.caption(f"업데이트 시간: {info.get('updated_at','-')}")
+# -----------------------------
+# 오늘의 시장 요약 (optional 데이터 안전 표시)
+# -----------------------------
+st.markdown("## 📊 오늘의 시장 요약")
+mkt = load_json("data/market_today.json", {})
+col1, col2, col3 = st.columns(3)
 
-st.markdown("---")
+with col1:
+    st.caption("KOSPI")
+    kospi = mkt.get("KOSPI", {})
+    val = kospi.get("value", None)
+    chg = kospi.get("change_pct", None)
+    st.markdown(f"### {val if val is not None else '—'}")
+    st.markdown(badge_delta(chg), unsafe_allow_html=True)
 
+with col2:
+    st.caption("KOSDAQ")
+    kosdaq = mkt.get("KOSDAQ", {})
+    val = kosdaq.get("value", None)
+    chg = kosdaq.get("change_pct", None)
+    st.markdown(f"### {val if val is not None else '—'}")
+    st.markdown(badge_delta(chg), unsafe_allow_html=True)
 
-# -------------------------------
-# ② 최신 경제·정책·산업·리포트 뉴스 TOP10
-# -------------------------------
-st.subheader("📰 최신 경제·정책·산업·리포트 뉴스 TOP 10")
+with col3:
+    st.caption("환율(USD/KRW)")
+    fx = mkt.get("USDKRW", {})
+    val = fx.get("value", None)
+    chg = fx.get("change_pct", None)
+    st.markdown(f"### {val if val is not None else '—'}")
+    st.markdown(badge_delta(chg), unsafe_allow_html=True)
 
-raw = safe_load_json("data/headlines_top10.json", {})
-items = raw.get("items", raw if isinstance(raw, list) else [])
+st.divider()
 
-safe_items = []
-for x in items:
-    if isinstance(x, dict):
-        title = x.get("title") or x.get("headline") or x.get("tit") or ""
-        link = x.get("link") or x.get("url") or None
-    elif isinstance(x, (list, tuple)):
-        title = str(x[0])
-        link = x[1] if len(x) > 1 else None
-    else:
-        title = str(x)
-        link = None
-    if title.strip():
-        safe_items.append({"title": title.strip(), "link": link})
-
-if not safe_items:
+# -----------------------------
+# 최신 헤드라인 Top 10
+# -----------------------------
+st.markdown("## 📰 최신 경제·정책·산업·리포트 뉴스 TOP 10")
+top10 = load_json("data/headlines_top10.json", {"items": []}).get("items", [])
+if not top10:
     st.info("헤드라인 없음")
 else:
-    for i, n in enumerate(safe_items[:10], 1):
-        if n.get("link"):
-            st.markdown(f"{i}. [{n['title']}]({n['link']})")
+    for i, n in enumerate(top10, 1):
+        title = n.get("title", "제목 없음")
+        link = n.get("link", "")
+        if link:
+            st.markdown(f"{i}. [{title}]({link})")
         else:
-            st.markdown(f"{i}. {n['title']}")
+            st.markdown(f"{i}. {title}")
 
-st.markdown("---")
+st.divider()
 
+# -----------------------------
+# 🔥 뉴스 기반 TOP 테마 (대표 종목/링크 포함)
+# -----------------------------
+st.markdown("## 🔥 뉴스 기반 TOP 테마")
+top5 = load_json("data/theme_top5.json", {"themes": []}).get("themes", [])
 
-# -------------------------------
-# ③ 뉴스 기반 TOP 테마 (5개)
-# -------------------------------
-st.subheader("🔥 뉴스 기반 TOP 테마")
-
-theme_raw = safe_load_json("data/theme_top5.json", {})
-theme_list = theme_raw.get("themes", theme_raw if isinstance(theme_raw, list) else [])
-
-rows = []
-for t in theme_list:
-    if isinstance(t, dict):
-        theme = t.get("theme") or t.get("name") or ""
-        score = t.get("score", t.get("count", 0))
-    else:
-        theme = str(t)
-        score = 0
-    if theme:
-        try:
-            score = float(score)
-        except:
-            score = 0.0
-        rows.append({"theme": theme, "score": score})
-
-if rows:
-    df_theme = pd.DataFrame(rows).sort_values("score", ascending=False).head(5)
-    st.bar_chart(df_theme.set_index("theme"))
-else:
+if not top5:
     st.info("테마 데이터 없음")
-
-st.markdown("---")
-
-
-# -------------------------------
-# ④ 전체 테마 요약 테이블
-# -------------------------------
-st.subheader("📊 전체 테마 집계 (감쇠 점수 포함)")
-
-theme2_raw = safe_load_json("data/theme_secondary5.json", {})
-theme2_list = theme2_raw.get("themes", theme2_raw if isinstance(theme2_raw, list) else [])
-df_theme2 = pd.DataFrame(theme2_list) if theme2_list else pd.DataFrame(columns=["theme","count","score"])
-st.dataframe(df_theme2)
-
-
-# -------------------------------
-# ⑤ 월간 키워드맵
-# -------------------------------
-st.subheader("🌍 월간 키워드맵 (최근 30일)")
-
-kw_raw = safe_load_json("data/keyword_map_month.json", {})
-kw_list = kw_raw.get("keywords", kw_raw if isinstance(kw_raw, list) else [])
-
-kw_rows = []
-for k in kw_list:
-    if isinstance(k, dict):
-        word = k.get("keyword") or k.get("word") or ""
-        cnt = k.get("count", 0)
-    else:
-        word = str(k)
-        cnt = 0
-    if word:
-        try:
-            cnt = int(cnt)
-        except:
-            cnt = 0
-        kw_rows.append({"keyword": word, "count": cnt})
-
-if kw_rows:
-    df_kw = pd.DataFrame(kw_rows).sort_values("count", ascending=False).head(30)
-    st.bar_chart(df_kw.set_index("keyword"))
 else:
-    st.info("키워드 없음")
+    # 막대차트
+    try:
+        df_bar = pd.DataFrame(
+            [{"theme": r.get("theme", ""), "score": r.get("score", r.get("count", 0))} for r in top5]
+        ).set_index("theme")
+        st.bar_chart(df_bar)
+    except Exception:
+        pass
 
-st.markdown("---")
+    # 카드 상세
+    for r in top5:
+        theme = r.get("theme", "")
+        score = r.get("score", r.get("count", 0))
+        sample_link = r.get("sample_link", "")
+        stocks = to_list_of_stocks(r.get("rep_stocks"))
 
+        with st.container(border=True):
+            st.markdown(f"### {theme} · 점수 **{score}**")
+            if stocks:
+                st.caption("대표 종목")
+                st.write(" | ".join(stocks))
 
-# -------------------------------
-# ⑥ 신규 테마 감지 (바이그램 등)
-# -------------------------------
-st.subheader("🧪 신규 테마 감지 (바이그램)")
+                # 종목별 전뉴스 2건 (접기)
+                with st.expander("종목별 전뉴스(최신 2건) 보기"):
+                    for s in stocks:
+                        news2 = fetch_two_news(s)
+                        st.markdown(f"- **{s}**")
+                        if not news2:
+                            st.write("  · 뉴스 없음")
+                        else:
+                            for n in news2:
+                                st.markdown(f"  · [{n['title']}]({n['link']})")
+            else:
+                st.caption("대표 종목 정보 없음")
 
-if os.path.exists("data/new_themes.json"):
-    new_themes = safe_load_json("data/new_themes.json", [])
-    if new_themes:
-        for t in new_themes:
-            st.markdown(f"- {t}")
-    else:
-        st.info("신규 테마 없음")
-else:
+            if sample_link:
+                st.markdown(f"[관련 뉴스 보기]({sample_link})")
+
+st.divider()
+
+# -----------------------------
+# 📊 전체 테마 집계 (감쇠 점수 포함)
+# -----------------------------
+st.markdown("## 📊 전체 테마 집계 (감쇠 점수 포함)")
+secondary = load_json("data/theme_secondary5.json", {"themes": []}).get("themes", [])
+if not secondary:
     st.info("데이터 없음")
+else:
+    df_sec = pd.DataFrame(
+        [{
+            "theme": r.get("theme", ""),
+            "count": r.get("count", 0),
+            "score": r.get("score", 0),
+            "sample_link": r.get("sample_link", "")
+        } for r in secondary]
+    )
+    st.dataframe(df_sec, use_container_width=True, hide_index=True)
 
-st.markdown("---")
+    with st.expander("테마별 샘플 뉴스 링크"):
+        for r in secondary[:30]:
+            tl = r.get("theme", "")
+            sl = r.get("sample_link", "")
+            st.markdown(f"- **{tl}** — {('[링크]('+sl+')') if sl else ''}")
 
-st.success("✅ 대시보드 로딩 완료 (모든 오류 방지 적용됨)")
+st.divider()
+
+# -----------------------------
+# 🌍 월간 키워드맵 (최근 30일)
+# -----------------------------
+st.markdown("## 🌍 월간 키워드맵 (최근 30일)")
+kw = load_json("data/keyword_map_month.json", {"keywords": []}).get("keywords", [])
+if not kw:
+    st.info("키워드 없음")
+else:
+    try:
+        df_kw = pd.DataFrame(kw)
+        df_kw = df_kw.sort_values("count", ascending=False).head(30)
+        df_kw = df_kw.set_index("keyword")
+        st.bar_chart(df_kw)
+    except Exception:
+        st.info("키워드 시각화 실패(데이터 형식 확인 필요)")
+
+st.divider()
+
+# -----------------------------
+# 🧪 신규 테마 감지 (바이그램)
+# -----------------------------
+st.markdown("## 🧪 신규 테마 감지 (바이그램)")
+new_themes = load_json("data/new_themes.json", [])
+if not new_themes:
+    st.info("데이터 없음")
+else:
+    st.write("\n".join([f"- {t}" for t in new_themes]))
+
+# -----------------------------
+# 푸터
+# -----------------------------
+st.success("대시보드 로딩 완료 (에러 방지 처리 적용)")
