@@ -1,263 +1,197 @@
-# scripts/update_dashboard.py
-# -*- coding: utf-8 -*-
-
 import os
 import json
 import time
-import math
-import pytz
-import requests
-from datetime import datetime, timedelta
-from collections import Counter, defaultdict
+from datetime import datetime, timedelta, timezone
+from dateutil.relativedelta import relativedelta
 
-# ===== 공통 경로/유틸 =====
-ROOT = os.path.dirname(os.path.dirname(__file__))  # repo 루트
-DATA_DIR = os.path.join(ROOT, "data")
+import requests
+import yfinance as yf
+
+DATA_DIR = "data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-def load_json(path, default=None):
+NEWS_API_KEY = os.getenv("NEWSAPI_KEY", "").strip()
+TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
+KST = timezone(timedelta(hours=9))
+
+# ---------- 유틸 ----------
+def save_json(path, obj):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+
+def load_json(path, default):
     try:
-        with open(os.path.join(ROOT, path) if not os.path.isabs(path) else path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return default
 
-def save_json(path, obj):
-    full = os.path.join(ROOT, path) if not os.path.isabs(path) else path
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-
-KST = pytz.timezone("Asia/Seoul")
-
-# ====== (1) 시장 지표 수집 ======
-def fetch_market_today():
-    """
-    KOSPI/KOSDAQ/USDKRW 등을 간단히 가져와 저장.
-    실제 사용 중인 API가 있으면 그 로직을 사용하세요.
-    """
-    # --- 예시용(필요 시 기존 코드로 교체) ---
-    kosdaq = None
-    kospi  = None
-    usdk   = None
-    try:
-        # KRX 요약(샘플 엔드포인트/로직은 각자 쓰시는 것으로 교체)
-        r = requests.get("https://query1.finance.yahoo.com/v7/finance/quote?symbols=^KQ11,^KS11,KRW=X", timeout=10)
-        q = r.json()["quoteResponse"]["result"]
-        for it in q:
-            sym = it.get("symbol")
-            if sym == "^KS11":
-                kospi = it.get("regularMarketPrice")
-            elif sym == "^KQ11":
-                kosdaq = it.get("regularMarketPrice")
-            elif sym == "KRW=X":
-                # USD/KRW는 야후에서는 KRW=X가 USDKRW 환율(원/달러)의 역수이므로
-                # KRW=X 값이 0.0007 형태로 오면 1/값을 취함
-                v = it.get("regularMarketPrice")
-                if v and v < 1:
-                    usdk = 1 / v
-                else:
-                    usdk = v
-    except Exception as e:
-        print("[market] fetch fail:", e)
-
-    now_kst = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
-    return {
-        "updated_at": now_kst,
-        "KOSPI": kospi,
-        "KOSDAQ": kosdaq,
-        "USDKRW": usdk,
-        "memo": "원/달러 고평가"
-    }
-
-# ====== (2) 뉴스 수집 ======
-NEWSAPI_KEY = os.getenv("NEWSAPI_KEY", "")  # GitHub Actions secrets 에서 주입
-
-def fetch_headlines(query, page_size=30, days=3):
-    """
-    NewsAPI 예시. 기존에 사용하던 뉴스 소스가 있다면 그 코드로 교체하세요.
-    """
-    if not NEWSAPI_KEY:
-        print("[news] NEWSAPI_KEY not found; return empty")
-        return []
-
-    from_dt = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%dT00:00:00Z")
-    url = "https://newsapi.org/v2/everything"
-    params = {
-        "q": query,
-        "language": "ko",
-        "from": from_dt,
-        "pageSize": page_size,
-        "sortBy": "publishedAt",
-        "apiKey": NEWSAPI_KEY,
-    }
-    try:
-        r = requests.get(url, params=params, timeout=15)
+def news_api_get(url, params):
+    """NewsAPI 호출(429 대비 간단 재시도)"""
+    for i in range(3):
+        r = requests.get(url, params=params, timeout=20)
+        if r.status_code == 200:
+            return r.json()
+        if r.status_code == 429:  # rate limit
+            time.sleep(2 + i * 2)
+            continue
         r.raise_for_status()
-        items = r.json().get("articles", [])
-        res = []
-        for a in items:
-            title = (a.get("title") or "").strip()
-            url   = a.get("url")
-            if title and url:
-                res.append({"title": title, "link": url})
-        return res
-    except Exception as e:
-        print(f"[news] fail for {query}:", e)
+    return {"status": "error", "message": "failed after retries"}
+
+# ---------- 1) 시장지표 ----------
+def fetch_market():
+    def last_close(ticker):
+        try:
+            hist = yf.Ticker(ticker).history(period="2d", interval="1d")
+            if hist.empty:
+                return None, None
+            close = float(hist["Close"].dropna().iloc[-1])
+            prev = float(hist["Close"].dropna().iloc[-2]) if len(hist) >= 2 else close
+            chg = (close - prev) / prev if prev else 0.0
+            return close, chg
+        except Exception:
+            return None, None
+
+    ks, ks_chg = last_close("^KS11")        # 코스피
+    kq, kq_chg = last_close("^KQ11")        # 코스닥
+    usdkrw, _ = last_close("USDKRW=X")      # 환율
+
+    data = {
+        "timestamp_kst": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+        "KOSPI": {"value": ks, "pct": ks_chg},
+        "KOSDAQ": {"value": kq, "pct": kq_chg},
+        "USDKRW": {"value": usdkrw},
+        "memo": "원/달러 고평가일수록 환율 수치↑"
+    }
+    save_json(f"{DATA_DIR}/market_today.json", data)
+    return data
+
+# ---------- 2) 테마/키워드 ----------
+THEMES = {
+    "AI": ["AI", "인공지능", "생성AI", "LLM"],
+    "반도체": ["반도체", "HBM", "메모리"],
+    "로봇": ["로봇", "휴머노이드"],
+    "스마트팩토리": ["스마트팩토리", "공장자동화"],
+    "조선": ["조선", "선박"],
+    "LNG": ["LNG"],
+    "해양": ["해양", "해상풍력"],
+    "원전": ["원전", "SMR"],
+    "이차전지": ["이차전지", "배터리"],
+    "리사이클링": ["리사이클링", "재활용"],
+    "바이오": ["바이오"],
+    "에너지": ["에너지"],
+    "디지털": ["디지털"],
+}
+
+STOCKS_BY_THEME = {
+    "AI": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"],
+    "로봇": ["유진로봇", "휴림로봇", "한라캐스트"],
+    "조선": ["HD현대중공업", "대우조선해양", "대한조선"],
+    "원전": ["두산에너빌리티", "보성파워텍", "한신기계"],
+    "이차전지": ["에코프로", "성일하이텍", "새빗켐"],
+}
+
+def month_range_kst():
+    now = datetime.now(KST)
+    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    end = (start + relativedelta(months=1)) - timedelta(seconds=1)
+    return start, end
+
+def count_news_for_keywords(keywords, from_kst, to_kst):
+    if not NEWS_API_KEY:
+        return 0
+    url = "https://newsapi.org/v2/everything"
+    q = " OR ".join([f'"{k}"' for k in keywords])
+    params = {
+        "q": q,
+        "language": "ko",
+        "from": from_kst.strftime("%Y-%m-%dT%H:%M:%S"),
+        "to": to_kst.strftime("%Y-%m-%dT%H:%M:%S"),
+        "pageSize": 100,
+        "apiKey": NEWS_API_KEY,
+        "sortBy": "publishedAt",
+    }
+    data = news_api_get(url, params)
+    if data.get("status") != "ok":
+        return 0
+    # totalResults는 1000 상한/샘플링 이슈가 있어 실제 기사 수 집계 기준은 articles 길이 합산
+    return len(data.get("articles", []))
+
+def build_theme_top5():
+    start, end = month_range_kst()
+    records = []
+    for theme, kws in THEMES.items():
+        cnt = count_news_for_keywords(kws, start, end)
+        records.append({"theme": theme, "count": int(cnt)})
+        # API rate-limit 완화
+        time.sleep(0.4)
+    # 정렬 후 상위 5개
+    records.sort(key=lambda x: x["count"], reverse=True)
+    top5 = records[:5]
+    save_json(f"{DATA_DIR}/theme_top5.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": top5})
+    return top5
+
+def build_keyword_map():
+    start, end = month_range_kst()
+    items = []
+    for theme, kws in THEMES.items():
+        cnt = count_news_for_keywords(kws, start, end)
+        items.append({"keyword": theme, "count": int(cnt)})
+        time.sleep(0.3)
+    save_json(f"{DATA_DIR}/keyword_map.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": items})
+    return items
+
+# ---------- 3) 최근 헤드라인 ----------
+def fetch_recent_headlines(limit=10):
+    if not NEWS_API_KEY:
         return []
+    url = "https://newsapi.org/v2/top-headlines"
+    params = {
+        "country": "kr",
+        "category": "business",
+        "pageSize": limit,
+        "apiKey": NEWS_API_KEY,
+    }
+    data = news_api_get(url, params)
+    if data.get("status") != "ok":
+        return []
+    out = []
+    for a in data.get("articles", []):
+        out.append({"title": a.get("title"), "url": a.get("url"), "source": a.get("source", {}).get("name")})
+    save_json(f"{DATA_DIR}/recent_headlines.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": out})
+    return out
 
-# ====== (3) 테마 정의 ======
-# 필요 시 기존 테마/키워드 구성을 그대로 유지하세요.
-THEMES = [
-    {"theme": "AI 반도체", "keywords": ["AI", "반도체", "HBM"], "stocks": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"]},
-    {"theme": "로봇/스마트팩토리", "keywords": ["로봇", "스마트팩토리"], "stocks": ["유진로봇", "휴림로봇", "한라캐스트"]},
-    {"theme": "조선/해양플랜트", "keywords": ["조선", "LNG", "해양"], "stocks": ["HD현대중공업", "대우조선해양", "대한조선"]},
-    {"theme": "원전/SMR", "keywords": ["원전", "SMR"], "stocks": ["두산에너빌리티", "보성파워텍", "한신기계"]},
-    {"theme": "2차전지 리사이클링", "keywords": ["2차전지", "리사이클링"], "stocks": ["성일하이텍", "새빗켐", "에코프로"]},
-]
-
-# ====== (4) 테마 TOP5 계산 & 최근 헤드라인 ======
-def build_theme_top5_and_headlines():
-    """
-    각 테마의 키워드로 최신 뉴스 수집 → 테마별 점수(빈도) → 상위5개 선정
-    또한 '최근 헤드라인 Top10' 도 함께 구성해서 반환
-    """
-    theme_scores = []
-    collected_all = []  # 전체 제목 모음(키워드맵용)
-
-    for t in THEMES:
-        q = " OR ".join(t["keywords"])
-        news = fetch_headlines(q, page_size=30, days=3)
-        score = len(news)
-        theme_scores.append({
-            "theme": t["theme"],
-            "desc": f"{t['theme']} 관련 뉴스 빈도 상승. 핵심 키워드: {', '.join(t['keywords'])}.",
-            "stocks": ", ".join(t["stocks"]),
-            "score": score,
-            "keywords": t["keywords"],
-            "news": news[:10],  # 테마별로 10건 정도(앱에서 2건만 보여줘도 됨)
-        })
-        collected_all.extend([n["title"] for n in news])
-
-    # 상위 5개
-    theme_scores.sort(key=lambda x: x["score"], reverse=True)
-    top5 = theme_scores[:5]
-
-    # 최근 헤드라인 Top10 (모든 테마 뉴스 합쳐서 최신순 상위 10)
-    # 여기서는 방금 수집한 리스트에서 제목만 가져왔으니, 상위 10개로 대체
-    recent10 = []
-    for t in theme_scores:
-        for it in t["news"]:
-            if len(recent10) < 10:
-                recent10.append(it)
-    # 혹시 부족하면 빈 리스트로 둠
-
-    return top5, recent10, collected_all
-
-# ====== (5) 월간 키워드맵 (고친 부분) ======
-def build_keyword_map(all_headlines, base_keywords):
-    """
-    실제 제목에 등장한 키워드의 등장 '문서 빈도'를 세서 저장.
-    - 한 제목에서 같은 키워드가 여러 번 나와도 1회로 처리.
-    - 상위 20개 저장.
-    """
-    kw_counter = Counter()
-
-    for title in all_headlines:
-        hit = set()
-        for kw in base_keywords:
-            if kw and kw in title:
-                hit.add(kw)
-        for kw in hit:
-            kw_counter[kw] += 1
-
-    data = [{"keyword": k, "count": v} for k, v in kw_counter.most_common(20)]
-
-    if not data:
-        print("[keyword_map] no matches; keep previous or save empty")
-        prev = load_json("data/keyword_map.json", [])
-        data = prev if prev else []
-
-    save_json("data/keyword_map.json", data)
-    print(f"[keyword_map] saved {len(data)} items")
-
-# ====== (6) 텔레그램 알림 (옵션) ======
+# ---------- 4) 텔레그램 알림 ----------
 def send_telegram(msg):
-    token = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID", "")
-    if not token or not chat_id:
+    if not (TG_TOKEN and TG_CHAT_ID):
         return
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
+    r = requests.post(url, data={"chat_id": TG_CHAT_ID, "text": msg, "disable_web_page_preview": True}, timeout=20)
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        requests.post(url, json={"chat_id": chat_id, "text": msg}, timeout=10)
+        r.raise_for_status()
     except Exception as e:
-        print("[telegram] fail:", e)
+        print("Telegram send error:", r.text)
 
-# ====== (7) 메인 실행 ======
 def main():
-    # 1) 시장 저장
-    market = fetch_market_today()
-    save_json("data/market_today.json", market)
-    print("[market] saved")
+    mk = fetch_market()
+    top5 = build_theme_top5()
+    kw = build_keyword_map()
+    heads = fetch_recent_headlines(10)
 
-    # 2) 테마 TOP5 / 최근 헤드라인 / 전체제목
-    theme_top5, recent10, all_titles = build_theme_top5_and_headlines()
-    # Streamlit에서 쓰는 구조로 저장
-    save_json("data/theme_top5.json", theme_top5)
-    print("[theme_top5] saved", len(theme_top5))
+    # 텔레그램 메시지
+    up = []
+    if mk.get("KOSPI", {}).get("value") is not None:
+        up.append(f"KOSPI {mk['KOSPI']['value']:.2f} ({mk['KOSPI']['pct']*100:+.2f}%)")
+    if mk.get("KOSDAQ", {}).get("value") is not None:
+        up.append(f"KOSDAQ {mk['KOSDAQ']['value']:.2f} ({mk['KOSDAQ']['pct']*100:+.2f}%)")
+    if mk.get("USDKRW", {}).get("value") is not None:
+        up.append(f"USD/KRW {mk['USDKRW']['value']:.2f}")
 
-    # 최근 헤드라인은 app에서 바로 리스트를 보여주게끔 theme_top5에 포함해도 되고,
-    # 필요하면 별도 파일로 저장
-    save_json("data/recent_headlines.json", recent10)
-    print("[recent10] saved", len(recent10))
-
-    # 3) 월간 키워드맵 (여기가 수정 핵심)
-    #   - 테마명 + 테마 키워드 전체를 관심 키워드로 사용
-    theme_names = [t["theme"] for t in THEMES]
-    core_keywords = []
-    for t in THEMES:
-        core_keywords.extend(t["keywords"])
-    base_keywords = list({*theme_names, *core_keywords})
-    build_keyword_map(all_titles, base_keywords)
-
-    # 4) 텔레그램 알림 (선택)
-    try:
-        msg = f"[AI 뉴스 대시보드] 업데이트 완료\n- 테마Top5: {', '.join([t['theme'] for t in theme_top5])}\n- 헤드라인 수: {len(recent10)}\n- 시장: KOSPI={market.get('KOSPI')}, KOSDAQ={market.get('KOSDAQ')}, USD/KRW={market.get('USDKRW')}"
-        send_telegram(msg)
-    except Exception as e:
-        print("[telegram] skipped:", e)
+    theme_line = ", ".join([f"{x['theme']}({x['count']})" for x in top5]) if top5 else "데이터 없음"
+    msg = "📊 대시보드 갱신 완료\n" + " / ".join(up) + f"\n🔥 Top5: {theme_line}"
+    send_telegram(msg)
 
 if __name__ == "__main__":
     main()
-    # ==============================
-# 📨 Telegram Notification
-# ==============================
-import requests
-import os
-
-def send_telegram_message(message: str):
-    """텔레그램으로 알림 전송"""
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        print("⚠️ Telegram 설정 누락")
-        return
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-    payload = {"chat_id": chat_id, "text": message}
-    try:
-        requests.post(url, data=payload)
-        print("✅ Telegram 알림 전송 완료")
-    except Exception as e:
-        print("🚨 Telegram 알림 실패:", e)
-
-
-# 예시: 최신 헤드라인 중 하나를 알림으로 보내기
-if __name__ == "__main__":
-    try:
-        latest_headlines = data["headline_top10"]["title"].tolist()[:3]
-        message = "📰 AI 뉴스 대시보드 자동 업데이트 완료!\n\n"
-        for i, h in enumerate(latest_headlines, 1):
-            message += f"{i}. {h}\n"
-        send_telegram_message(message)
-    except Exception as e:
-        print("알림 준비 중 오류:", e)
