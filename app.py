@@ -1,3 +1,7 @@
+from modules.style import apply_global_style, render_quick_menu
+
+apply_global_style()
+render_quick_menu()
 # -*- coding: utf-8 -*-
 import streamlit as st
 from datetime import datetime
