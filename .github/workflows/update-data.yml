@@ -47,3 +47,7 @@ jobs:
             git commit -m "auto: hourly refresh"
             git push
           fi
+          heads = collect_headlines()
+print(f" - collected headlines: {len(heads)}")   # ✅ 추가
+save_json(os.path.join(DATA, "headlines.json"), heads[:50])
+print(" - headlines.json updated")
