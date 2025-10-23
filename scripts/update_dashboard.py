@@ -12,7 +12,7 @@ def save_json(path, obj):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(obj, f, ensure_ascii=False, indent=2)
 
-# ── 1) 지수/환율/원자재 (야후 파이낸스) ─────────────────────────
+# ── 1) 지수/환율/원자재 (야후 파이낸스)
 def fetch_market_today():
     tickers = {
         "KOSPI": "^KS11",
@@ -41,7 +41,7 @@ def fetch_market_today():
     out["comment"] = " · ".join(comment) if comment else "혼조 속 개별 모멘텀"
     return out
 
-# ── 2) 뉴스 수집 + 키워드맵 ────────────────────────────────────
+# ── 2) 뉴스 수집(제목+링크) & 키워드맵
 NEWS_SOURCES = [
     "https://news.google.com/rss/search?q=AI%20반도체&hl=ko&gl=KR&ceid=KR:ko",
     "https://news.google.com/rss/search?q=로봇%20스마트팩토리&hl=ko&gl=KR&ceid=KR:ko",
@@ -53,15 +53,18 @@ NEWS_SOURCES = [
 KEYWORDS = ["AI","반도체","HBM","로봇","스마트팩토리","조선","LNG","해양","ESS","배터리","전력","원전","SMR","수소","환율","수출","바이오","게임"]
 
 def collect_headlines():
-    heads = []
+    items = []
     for url in NEWS_SOURCES:
         try:
             feed = feedparser.parse(url)
             for e in feed.entries[:30]:
-                heads.append(re.sub(r"\s+"," ", e.title))
+                title = re.sub(r"\s+"," ", e.title)
+                link = getattr(e, "link", None)
+                if title and link:
+                    items.append({"title": title, "url": link})
         except Exception:
             continue
-    # 옵션: NewsAPI 키가 있으면 추가 보강
+    # (선택) NewsAPI 보강
     key = os.getenv("NEWSAPI_KEY")
     if key:
         try:
@@ -70,21 +73,22 @@ def collect_headlines():
                              params={"q": q, "language":"ko", "pageSize":50, "sortBy":"publishedAt"},
                              headers={"X-Api-Key": key}, timeout=12)
             for a in r.json().get("articles", []):
-                if a.get("title"): heads.append(a["title"])
+                if a.get("title") and a.get("url"):
+                    items.append({"title": a["title"], "url": a["url"]})
         except Exception:
             pass
-    return heads
+    return items
 
 def build_keyword_map(headlines):
     cnt = Counter()
     for t in headlines:
-        low = t.lower()
+        low = t["title"].lower()
         for kw in KEYWORDS:
             if kw.lower() in low:
                 cnt[kw] += 1
     return dict(cnt.most_common(20))
 
-# ── 3) 테마 Top5 산출 ──────────────────────────────────────────
+# ── 3) 테마 Top5 산출
 THEME_DEF = [
     {"name":"AI 반도체", "keys":["AI","반도체","HBM"], "stocks":["삼성전자","하이닉스","엘비세미콘","티씨케이"]},
     {"name":"로봇/스마트팩토리", "keys":["로봇","스마트팩토리"], "stocks":["유진로봇","휴림로봇","한라캐스트"]},
@@ -119,6 +123,10 @@ def main():
     print(" - market_today.json updated")
 
     heads = collect_headlines()
+    # 헤드라인 저장 (상위 50개)
+    save_json(os.path.join(DATA, "headlines.json"), heads[:50])
+    print(" - headlines.json updated")
+
     kw_map = build_keyword_map(heads)
     save_json(os.path.join(DATA, "keyword_map.json"), kw_map)
     print(" - keyword_map.json updated")
