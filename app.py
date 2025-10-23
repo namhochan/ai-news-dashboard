@@ -2,22 +2,22 @@
 import json
 from pathlib import Path
 import pandas as pd
-import streamlit as st
 import plotly.express as px
+import streamlit as st
 
-st.set_page_config(page_title="AI 뉴스리포트 – Web Dashboard", layout="wide")
+st.set_page_config(page_title="AI 뉴스리포트 – Web Dashboard (RSS)", layout="wide")
 
 DATA = Path("data")
 
-def load_json(p, default):
-    p = DATA / p
+def load_json(name, default):
+    p = DATA / name
     if not p.exists(): return default
     try:
         return json.loads(p.read_text(encoding="utf-8"))
     except Exception:
         return default
 
-# 데이터 로드
+# 데이터
 market   = load_json("market_today.json", {})
 topN     = load_json("theme_top.json", [])
 themeAll = load_json("theme_all_table.json", [])
@@ -25,7 +25,8 @@ kwMonth  = load_json("keyword_monthly.json", [])
 heads    = load_json("headlines.json", [])
 emerge   = load_json("emerging_themes.json", [])
 
-st.title("📊 AI 뉴스리포트 – Web Dashboard (RSS Auto)")
+# 헤더
+st.title("📊 AI 뉴스리포트 – Web Dashboard (Google News RSS)")
 st.caption(f"지표/환율 갱신: {market.get('updated_at','-')} (KST)")
 
 # ===== 오늘의 시장 =====
@@ -43,16 +44,28 @@ st.divider()
 # ===== TOP 테마 =====
 st.subheader("🔥 뉴스 기반 TOP 테마")
 if topN:
-    df = pd.DataFrame(topN)
-    fig = px.bar(df, x="theme", y="score", text="count", title=None)
+    df = pd.DataFrame(topN).sort_values("score", ascending=False)
+    # 정규화 비율(%) 옵션
+    norm = st.toggle("백분율로 보기", value=True)
+    if norm:
+        total = df["score"].sum() or 1
+        df["share(%)"] = (df["score"]/total*100).round(1)
+        ycol = "share(%)"
+        txt = "share(%)"
+    else:
+        ycol = "score"; txt = "count"
+
+    fig = px.bar(df, x="theme", y=ycol, text=txt, title=None, height=360)
     fig.update_traces(textposition="outside")
+    fig.update_layout(xaxis_title=None, yaxis_title=None, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig, use_container_width=True)
-    with st.expander("상세 보기"):
-        st.dataframe(df[["theme","count","score","rep_stocks","sample_link"]])
+
+    with st.expander("상세 보기 / 대표 종목"):
+        st.dataframe(df[["theme","count","score","rep_stocks","sample_link"]], use_container_width=True, height=280)
 else:
     st.info("테마 데이터 없음")
 
-# ===== 전체 테마 테이블 =====
+# ===== 전체 테마 =====
 st.subheader("🧭 전체 테마 집계 (감쇠 점수 포함)")
 if themeAll:
     df_all = pd.DataFrame(themeAll).sort_values("score", ascending=False)
@@ -65,18 +78,17 @@ st.divider()
 # ===== 월간 키워드맵 =====
 st.subheader("🌍 월간 키워드맵 (최근 30일)")
 if kwMonth:
-    dfk = pd.DataFrame(kwMonth)
-    fig2 = px.bar(dfk, x="keyword", y="count")
-    fig2.update_layout(xaxis_tickangle=-30)
+    dkm = pd.DataFrame(kwMonth).sort_values("count", ascending=False).head(20)
+    fig2 = px.bar(dkm, x="keyword", y="count", height=380)
+    fig2.update_layout(xaxis_tickangle=-25, margin=dict(l=10,r=10,t=10,b=10))
     st.plotly_chart(fig2, use_container_width=True)
 else:
     st.info("키워드 데이터 없음")
 
-# ===== 신규 테마 감지 =====
+# ===== 신규 테마 =====
 st.subheader("🧪 신규 테마 감지 (바이그램)")
 if emerge:
-    dfe = pd.DataFrame(emerge)
-    st.dataframe(dfe, use_container_width=True, height=260)
+    st.dataframe(pd.DataFrame(emerge), use_container_width=True, height=260)
 else:
     st.info("신규 테마 없음")
 
@@ -88,4 +100,4 @@ if heads:
 else:
     st.info("헤드라인 없음")
 
-st.caption("ⓒ Google News RSS + yfinance / 테마 감쇠: score = 0.7*이번 + 0.3*지난")
+st.caption("※ 방법: 큰 RSS 풀을 내려받아 기사 내용을 테마 사전으로 분류 → 감쇠 점수로 순위 안정화")
