@@ -1,15 +1,13 @@
 name: Update AI News Dashboard (hourly)
 
 on:
-  schedule:
-    - cron: "0 * * * *"   # 매시 정각마다 실행
   workflow_dispatch:
+  schedule:
+    - cron: "0 * * * *"  # 매시간 정각 실행 (UTC 기준)
 
 jobs:
-  build:
+  update:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout repository
@@ -18,45 +16,33 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.10"
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Update dashboard data
+      - name: Run update script
         env:
           NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python scripts/update_dashboard.py
 
-      - name: Commit & push changes
+      - name: Commit and push changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add data/*.json
-          if git commit -m "auto: hourly update"; then
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          git commit -m "auto: hourly refresh" || echo "No changes"
+          git push
 
-      - name: Build Telegram message
-        id: msg
-        run: |
-          python scripts/update_dashboard.py --summary-only > msg.txt
-          echo "text<<EOF" >> $GITHUB_OUTPUT
-          cat msg.txt >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Send Telegram Alert
-        if: ${{ secrets.TELEGRAM_BOT_TOKEN != 'AAEfuIvqm2jTBBxQpNZA351T2FHMYuG3Wrs' && secrets.TELEGRAM_CHAT_ID != '8202492756' }}
+      - name: Send Telegram notification
         env:
-          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT:  ${{ secrets.TELEGRAM_CHAT_ID }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          set -e
-          curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-            -H "Content-Type: application/json" \
-            -d "{\"chat_id\":\"${TG_CHAT}\",\"text\":\"${{ steps.msg.outputs.text }}\",\"parse_mode\":\"Markdown\"}"
+          curl -s -X POST https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage \
+            -d chat_id=${TELEGRAM_CHAT_ID} \
+            -d text="✅ 대시보드 업데이트 완료: $(date '+%Y-%m-%d %H:%M:%S') (KST)"
