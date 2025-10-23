@@ -269,8 +269,49 @@ if summary:
     with st.expander("전체 요약문 보기 👇"):
         for s in summary: st.markdown(f"- {s.strip()}")
 
-# =========================================
-# 📊 AI 상승확률 리포트 + 유망 Top5 + 예측
-# =========================================
-# (이전 버전의 단계 2~4 그대로 유지 — 생략 가능)
+# =====================================
+# 📊 2단계: 테마별 상승 확률 예측 (AI 리스크레벨 + 테마강도)
+# =====================================
+st.divider()
+st.markdown("## 📊 AI 상승 확률 예측 리포트")
 
+def calc_theme_strength(count, avg_delta):
+    """테마강도: 뉴스빈도(0~1) + 평균등락(0~1)"""
+    freq_score = min(count / 20, 1.0)
+    price_score = min(max((avg_delta + 5) / 10, 0), 1.0)
+    total = (freq_score * 0.6 + price_score * 0.4) * 5
+    return round(total, 1)
+
+def calc_risk_level(avg_delta):
+    """AI 리스크 레벨 (1~5, 하락폭 클수록 높음)"""
+    if avg_delta >= 3: return 1
+    if avg_delta >= 1: return 2
+    if avg_delta >= -1: return 3
+    if avg_delta >= -3: return 4
+    return 5
+
+report_rows = []
+for tr in theme_rows[:5]:
+    theme = tr["theme"]
+    stocks = THEME_STOCKS.get(theme, [])
+    deltas = []
+    for _, ticker in stocks:
+        try:
+            last, prev = fetch_quote(ticker)
+            if last and prev:
+                deltas.append((last - prev) / prev * 100)
+        except Exception:
+            pass
+    avg_delta = np.mean(deltas) if deltas else 0
+    theme_strength = calc_theme_strength(tr["count"], avg_delta)
+    risk_level = calc_risk_level(avg_delta)
+    report_rows.append({
+        "테마": theme,
+        "뉴스빈도": tr["count"],
+        "평균등락(%)": round(avg_delta, 2),
+        "테마강도(1~5)": theme_strength,
+        "리스크레벨(1~5)": risk_level,
+    })
+
+st.dataframe(report_rows, use_container_width=True, hide_index=True)
+st.caption("※ 테마강도↑ = 뉴스 + 가격이 모두 활발한 상태 / 리스크레벨↑ = 변동성·하락 가능성 높음")
