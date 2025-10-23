@@ -117,3 +117,64 @@ dump("keyword_map_month.json", {"keywords":[{"keyword":k,"count":v} for k,v in k
 dump("new_themes.json", new_candidates)
 
 print(f"[OK] news={len(news_100)} top5={len(top5)} kw={len(keyword_counter)} new={len(new_candidates)}")
+# scripts/fetch_market.py
+import json, os, math, time
+from datetime import datetime, timezone, timedelta
+
+import pandas as pd
+import yfinance as yf
+
+KST = timezone(timedelta(hours=9))
+OUT = "data/market_today.json"
+
+# Yahoo 티커 매핑
+TICKERS = {
+    "KOSPI":   "^KS11",     # 코스피
+    "KOSDAQ":  "^KQ11",     # 코스닥
+    "USDKRW":  "KRW=X",     # 달러/원
+    "WTI":     "CL=F",      # 서부텍사스유 선물
+    "Gold":    "GC=F",      # 금 선물
+    "Copper":  "HG=F",      # 구리 선물
+}
+
+def pct_change(cur, prev):
+    try:
+        if prev is None or prev == 0 or any(map(math.isnan, [cur, prev])):
+            return None
+        return (cur - prev) / prev * 100.0
+    except Exception:
+        return None
+
+def last_two_prices(ticker):
+    """최근 5영업일에서 마지막 2개 종가를 가져옴(결측/휴장 대비 여유)."""
+    try:
+        df = yf.download(ticker, period="10d", interval="1d", auto_adjust=False, progress=False)
+        if df.empty:
+            return None, None
+        closes = df["Close"].dropna().tail(2).tolist()
+        if len(closes) == 1:
+            return float(closes[0]), None
+        elif len(closes) >= 2:
+            return float(closes[-1]), float(closes[-2])
+    except Exception:
+        pass
+    return None, None
+
+def main():
+    os.makedirs("data", exist_ok=True)
+    out = {}
+    for name, ticker in TICKERS.items():
+        cur, prev = last_two_prices(ticker)
+        chg = pct_change(cur, prev) if (cur is not None and prev is not None) else None
+        out[name] = {
+            "value": None if cur is None else round(cur, 2),
+            "prev":  None if prev is None else round(prev, 2),
+            "change_pct": None if chg is None else round(chg, 2),
+            "ticker": ticker,
+            "asof": datetime.now(KST).isoformat()
+        }
+    with open(OUT, "w", encoding="utf-8") as f:
+        json.dump(out, f, ensure_ascii=False, indent=2)
+
+if __name__ == "__main__":
+    main()
