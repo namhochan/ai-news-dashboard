@@ -1,96 +1,70 @@
-# -*- coding: utf-8 -*-
-import math
+# modules/ai_logic.py
 import numpy as np
 import pandas as pd
+import streamlit as st
 import yfinance as yf
-from sklearn.linear_model import LogisticRegression
 
-def _fmt_percent(v):
-    try:
-        if v is None or math.isnan(v): return "-"
-        return f"{v:+.2f}%"
-    except Exception:
-        return "-"
+from .market import fetch_quote, fmt_percent, fmt_number
+from .news import THEME_STOCKS
 
-def fetch_quote_safe(ticker: str):
-    """yfinance 안정 수집: fast_info → 7d 종가"""
-    try:
-        t = yf.Ticker(ticker)
-        last = getattr(t.fast_info, "last_price", None)
-        prev = getattr(t.fast_info, "previous_close", None)
-        if last and prev:
-            return float(last), float(prev)
-    except Exception:
-        pass
-    try:
-        df = yf.download(ticker, period="7d", interval="1d",
-                         progress=False, auto_adjust=False)
-        c = df.get("Close")
-        if c is None or c.dropna().empty:
-            return None, None
-        c = c.dropna()
-        last = float(c.iloc[-1])
-        prev = float(c.iloc[-2]) if len(c) >= 2 else None
-        return last, prev
-    except Exception:
-        return None, None
+def summarize_news_titles(news_list, topn=5):
+    """아주 간단 요약: 제목에서 상위 n개 문장"""
+    titles = [n.get("title","") for n in news_list if n.get("title")]
+    if not titles: return []
+    joined = " ".join(titles)
+    sents = [s.strip() for s in joined.split(".") if len(s.strip())>15]
+    return sents[:topn]
 
-# ===== 상승확률(간단 로지스틱) =====
-def _rsi(series: pd.Series, period: int = 14):
-    d = series.diff()
-    up = np.where(d > 0, d, 0.0)
-    dn = np.where(d < 0, -d, 0.0)
-    roll_up = pd.Series(up, index=series.index).rolling(period).mean()
-    roll_dn = pd.Series(dn, index=series.index).rolling(period).mean().replace(0, np.nan)
-    rs = roll_up / roll_dn
-    return (100 - (100 / (1 + rs))).fillna(50)
+def calc_theme_strength(news_count, avg_delta):
+    """테마강도(1~5): 뉴스빈도(60%) + 평균등락(40%)"""
+    freq_score  = min(news_count/20, 1.0)
+    price_score = min(max((avg_delta + 5)/10, 0), 1.0)
+    total = (freq_score*0.6 + price_score*0.4) * 5
+    return round(total, 1)
 
-def _macd(series: pd.Series, fast=12, slow=26, sig=9):
-    ema_f = series.ewm(span=fast, adjust=False).mean()
-    ema_s = series.ewm(span=slow, adjust=False).mean()
-    line = ema_f - ema_s
-    signal = line.ewm(span=sig, adjust=False).mean()
-    hist = line - signal
-    return line, signal, hist
+def calc_risk_level(avg_delta):
+    if avg_delta >= 3: return 1
+    if avg_delta >= 1: return 2
+    if avg_delta >= -1: return 3
+    if avg_delta >= -3: return 4
+    return 5
 
-def _load_hist(ticker: str, period="2y"):
-    df = yf.download(ticker, period=period, interval="1d",
-                     auto_adjust=True, progress=False)
-    df = df[~df.index.duplicated(keep="last")].dropna()
-    return df
+def pick_promising_stocks(theme_rows, top_n=5):
+    """
+    테마 강도 + 개별 등락률을 통한 점수로 상위 종목 선별
+    theme_rows: [{'테마':..., '뉴스건수':...}, ...]
+    """
+    cands=[]
+    for tr in theme_rows[:8]:
+        theme = tr["테마"]
+        news_count = tr["뉴스건수"]
+        for name, ticker in THEME_STOCKS.get(theme, []):
+            try:
+                last, prev = fetch_quote(ticker)
+                if not last or not prev: 
+                    continue
+                delta = (last - prev) / prev * 100
+                score = news_count*0.3 + delta*0.7
+                cands.append({
+                    "테마": theme, "종목명": name, "티커": ticker,
+                    "등락률(%)": round(delta,2), "뉴스빈도": news_count,
+                    "AI점수": round(score,2)
+                })
+            except Exception:
+                continue
+    df = pd.DataFrame(cands)
+    if df.empty: return df
+    return df.sort_values("AI점수", ascending=False).head(top_n)
 
-def _build_features(df: pd.DataFrame):
-    px = df["Close"]
-    f = pd.DataFrame(index=df.index)
-    f["ret_1d"] = px.pct_change(1)
-    f["ret_5d"] = px.pct_change(5)
-    f["ret_10d"] = px.pct_change(10)
-    f["vol_5d"] = px.pct_change().rolling(5).std()
-    f["vol_20d"] = px.pct_change().rolling(20).std()
-    f["rsi_14"] = _rsi(px, 14)
-    macd, sig, hist = _macd(px)
-    f["macd"] = macd; f["macd_sig"] = sig; f["macd_hist"] = hist
-    ma5 = px.rolling(5).mean(); ma20 = px.rolling(20).mean()
-    f["ma5_gap"] = (px - ma5) / ma5
-    f["ma20_gap"] = (px - ma20) / ma20
-    y = (px.shift(-1) > px).astype(int)
-    return pd.concat([f, y.rename("y")], axis=1).dropna()
-
-def predict_tomorrow_prob(ticker: str):
-    """다음날 상승확률 / 최근 3개 평균확률"""
-    hist = _load_hist(ticker)
-    if hist.empty: return None, None
-    feat = _build_features(hist)
-    if len(feat) < 120: return None, None
-    data = feat.tail(300)
-    X = data.drop(columns=["y"]).values
-    y = data["y"].values
-    n = len(data); split = max(60, n - 3)
-    X_train, y_train = X[:split], y[:split]
-    X_pred = X[split:]
-    m = LogisticRegression(max_iter=200)
-    m.fit(X_train, y_train)
-    prob = m.predict_proba(X_pred)[:, 1]
-    p1 = float(prob[0]) if len(prob) else None
-    p3 = float(prob.mean()) if len(prob) else None
-    return p1, p3
+def theme_price_snapshot(theme):
+    """테마 내 종목들의 현재가/변동률 스냅샷"""
+    rows=[]
+    for name, ticker in THEME_STOCKS.get(theme, []):
+        try:
+            last, prev = fetch_quote(ticker)
+            if last and prev:
+                delta = (last - prev)/prev*100
+                rows.append({"종목":name,"티커":ticker,"현재가":fmt_number(last,0),"등락률":fmt_percent(delta)})
+        except Exception:
+            pass
+    return rows
