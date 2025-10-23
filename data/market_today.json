@@ -4,41 +4,41 @@
     "prev": null,
     "change_pct": null,
     "ticker": "^KS11",
-    "asof": "2025-10-23T19:57:37.720212+09:00"
+    "asof": "2025-10-23T20:04:34.183593+09:00"
   },
   "KOSDAQ": {
     "value": null,
     "prev": null,
     "change_pct": null,
     "ticker": "^KQ11",
-    "asof": "2025-10-23T19:57:37.784516+09:00"
+    "asof": "2025-10-23T20:04:34.237318+09:00"
   },
   "USDKRW": {
     "value": null,
     "prev": null,
     "change_pct": null,
     "ticker": "KRW=X",
-    "asof": "2025-10-23T19:57:37.853218+09:00"
+    "asof": "2025-10-23T20:04:34.314207+09:00"
   },
   "WTI": {
     "value": null,
     "prev": null,
     "change_pct": null,
     "ticker": "CL=F",
-    "asof": "2025-10-23T19:57:38.062902+09:00"
+    "asof": "2025-10-23T20:04:34.391006+09:00"
   },
   "Gold": {
     "value": null,
     "prev": null,
     "change_pct": null,
     "ticker": "GC=F",
-    "asof": "2025-10-23T19:57:38.127172+09:00"
+    "asof": "2025-10-23T20:04:34.514885+09:00"
   },
   "Copper": {
     "value": null,
     "prev": null,
     "change_pct": null,
     "ticker": "HG=F",
-    "asof": "2025-10-23T19:57:38.192578+09:00"
+    "asof": "2025-10-23T20:04:34.568866+09:00"
   }
 }
