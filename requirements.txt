@@ -2,5 +2,7 @@ streamlit
 plotly
 pandas
 yfinance
+feedparser
 requests
+newsapi-python
 pytz
