@@ -1,4 +1,5 @@
 import math
+import io  # ★ 중요: StringIO는 pandas.compat가 아니라 io에서 가져오기
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from urllib.parse import quote_plus
@@ -8,66 +9,46 @@ import requests
 import streamlit as st
 import yfinance as yf
 
-# ─────────────────────────────────────────────────────────────
-# 페이지/스타일: 한 카드에 전 지표 표시 (컴팩트)
-# ─────────────────────────────────────────────────────────────
 st.set_page_config(page_title="AI 뉴스리포트 – 상단 요약(원카드)", layout="wide")
 
 CSS = """
 <style>
-.card      { background:#101318; border:1px solid #1f2533; border-radius:14px; padding:12px 14px; }
-.card h3   { margin:0 0 8px 0; font-size:1.05rem; }
-.grid      { display:grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap:8px 12px; }
-.row       { display:flex; align-items:center; justify-content:space-between; 
-             background:#0c0f14; padding:8px 10px; border:1px solid #1b2230; border-radius:10px; }
-.name      { font-size:.92rem; color:#a7b0c2; }
-.valbox    { display:flex; gap:10px; align-items:baseline; }
-.value     { font-weight:800; font-size:1.06rem; letter-spacing:-.01em; }
-.delta     { font-size:.88rem; }
-.up        { color:#e05246; } /* 빨강 */
-.down      { color:#2a7be6; } /* 파랑 */
-.flat      { color:#9aa3ad; }
-.src       { font-size:.72rem; color:#788196; margin-top:8px; }
-@media (max-width:860px){ .grid{ grid-template-columns: 1fr; } }
+.card{background:#101318;border:1px solid #1f2533;border-radius:14px;padding:12px 14px}
+.card h3{margin:0 0 8px 0;font-size:1.05rem}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 12px}
+.row{display:flex;align-items:center;justify-content:space-between;background:#0c0f14;
+     padding:8px 10px;border:1px solid #1b2230;border-radius:10px}
+.name{font-size:.92rem;color:#a7b0c2}
+.valbox{display:flex;gap:10px;align-items:baseline}
+.value{font-weight:800;font-size:1.06rem;letter-spacing:-.01em}
+.delta{font-size:.88rem}
+.up{color:#e05246}.down{color:#2a7be6}.flat{color:#9aa3ad}
+.src{font-size:.72rem;color:#788196;margin-top:8px}
+@media (max-width:860px){.grid{grid-template-columns:1fr}}
 </style>
 """
 st.markdown(CSS, unsafe_allow_html=True)
 
-# ─────────────────────────────────────────────────────────────
-# 유틸/포맷
-# ─────────────────────────────────────────────────────────────
 def fmt_num(x, d=2):
-    if x is None:
-        return "-"
+    if x is None: return "-"
     try:
-        if math.isnan(x) or math.isinf(x):
-            return "-"
-    except Exception:
-        pass
+        if math.isnan(x) or math.isinf(x): return "-"
+    except Exception: pass
     return f"{x:,.{d}f}"
 
 def fmt_pct(x):
-    if x is None:
-        return "-"
+    if x is None: return "-"
     try:
-        if math.isnan(x) or math.isinf(x):
-            return "-"
-    except Exception:
-        pass
+        if math.isnan(x) or math.isinf(x): return "-"
+    except Exception: pass
     return f"{x:+.2f}%"
 
 def classify(delta):
-    if delta is None:
-        return "flat"
-    if delta > 0:
-        return "up"
-    if delta < 0:
-        return "down"
+    if delta is None: return "flat"
+    if delta > 0: return "up"
+    if delta < 0: return "down"
     return "flat"
 
-# ─────────────────────────────────────────────────────────────
-# 견고한 시세 수집 (Stooq → Yahoo HTTP → yfinance)
-# ─────────────────────────────────────────────────────────────
 STOOQ_MAP = {
     "^KS11": "^ks11",  # KOSPI
     "^KQ11": "^kq11",  # KOSDAQ
@@ -86,13 +67,13 @@ def fetch_stooq(symbol:str):
         return None, None, None
     url = f"https://stooq.com/q/l/?s={quote_plus(s)}&f=sd2t2ohlcv&h&e=csv"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
         r.raise_for_status()
-        df = pd.read_csv(pd.compat.StringIO(r.text))
-        if df.empty:
-            return None, None, None
+        # ★ pandas.compat.StringIO(X) → io.StringIO(O)
+        df = pd.read_csv(io.StringIO(r.text))
+        if df.empty: return None, None, None
         last = float(df.loc[0, "Close"])
-        # 이전종가가 한 줄 CSV엔 없으므로 보조로 yahoo_http에서 prev만 시도
+        # Stooq 라이트 CSV엔 이전종가가 없어 보강 필요
         return last, None, "stooq"
     except Exception:
         return None, None, None
@@ -101,11 +82,10 @@ def fetch_stooq(symbol:str):
 def fetch_yahoo_http(symbol:str):
     url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={quote_plus(symbol)}"
     try:
-        r = requests.get(url, timeout=10)
+        r = requests.get(url, timeout=10, headers={"User-Agent":"Mozilla/5.0"})
         r.raise_for_status()
         j = r.json().get("quoteResponse", {}).get("result", [])
-        if not j: 
-            return None, None, None
+        if not j: return None, None, None
         d = j[0]
         last = d.get("regularMarketPrice")
         prev = d.get("regularMarketPreviousClose")
@@ -120,8 +100,7 @@ def fetch_yf(symbol:str):
     try:
         df = yf.download(symbol, period="7d", interval="1d", progress=False, auto_adjust=False)
         c = df.get("Close")
-        if c is None or c.dropna().empty:
-            return None, None, None
+        if c is None or c.dropna().empty: return None, None, None
         c = c.dropna()
         last = float(c.iloc[-1])
         prev = float(c.iloc[-2]) if len(c) >= 2 else None
@@ -130,16 +109,15 @@ def fetch_yf(symbol:str):
         return None, None, None
 
 def get_quote(symbol:str):
-    # 1) stooq (last만) → prev는 yahoo_http로 보강
+    # 1) Stooq (last) → prev는 Yahoo HTTP로 보강
     last, prev, src = fetch_stooq(symbol)
     if last is not None and prev is None:
         _, prev2, _ = fetch_yahoo_http(symbol)
-        if prev2 is not None:
-            prev = prev2
+        if prev2 is not None: prev = prev2
     if last is not None and prev is not None:
         return last, prev, src
 
-    # 2) yahoo http
+    # 2) Yahoo HTTP
     last, prev, src = fetch_yahoo_http(symbol)
     if last is not None and prev is not None:
         return last, prev, src
@@ -148,9 +126,6 @@ def get_quote(symbol:str):
     last, prev, src = fetch_yf(symbol)
     return last, prev, src
 
-# ─────────────────────────────────────────────────────────────
-# 대상 심볼
-# ─────────────────────────────────────────────────────────────
 ITEMS = [
     ("KOSPI",   "^KS11",  "auto"),
     ("KOSDAQ",  "^KQ11",  "auto"),
@@ -162,9 +137,6 @@ ITEMS = [
     ("Copper",  "HG=F",   "3dp"),
 ]
 
-# ─────────────────────────────────────────────────────────────
-# 렌더링 (원카드)
-# ─────────────────────────────────────────────────────────────
 st.markdown("## 🧠 AI 뉴스리포트 – 상단 요약 (원카드)")
 kst = ZoneInfo("Asia/Seoul")
 st.caption(f"업데이트: {datetime.now(kst).strftime('%Y-%m-%d %H:%M:%S (KST)')}")
@@ -175,18 +147,16 @@ with st.container():
     st.markdown('<div class="grid">', unsafe_allow_html=True)
 
     debug_rows = []
-
     for name, sym, vfmt in ITEMS:
         last, prev, src = get_quote(sym)
 
-        delta = None
-        pct = None
+        delta = pct = None
         if last is not None and prev not in (None, 0):
             try:
                 delta = last - prev
                 pct = (delta / prev) * 100
             except Exception:
-                delta, pct = None, None
+                pass
 
         klass = classify(delta)
         if vfmt == "krw":
@@ -199,16 +169,15 @@ with st.container():
             vtxt = fmt_num(last, 2)
             dtxt = f"{fmt_num(delta,2)} ({fmt_pct(pct)})" if delta is not None else "-"
 
-        html = f"""
+        st.markdown(f"""
         <div class="row">
-            <div class="name">{name}</div>
-            <div class="valbox">
-                <div class="value">{vtxt}</div>
-                <div class="delta {klass}">{dtxt}</div>
-            </div>
+          <div class="name">{name}</div>
+          <div class="valbox">
+            <div class="value">{vtxt}</div>
+            <div class="delta {klass}">{dtxt}</div>
+          </div>
         </div>
-        """
-        st.markdown(html, unsafe_allow_html=True)
+        """, unsafe_allow_html=True)
 
         debug_rows.append(
             {"name": name, "symbol": sym, "last": last, "prev": prev, "delta": delta, "pct": pct, "source": src}
