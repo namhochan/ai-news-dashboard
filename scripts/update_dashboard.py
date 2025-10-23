@@ -1,197 +1,239 @@
-import os
-import json
-import time
-from datetime import datetime, timedelta, timezone
-from dateutil.relativedelta import relativedelta
-
-import requests
+# scripts/update_dashboard.py
+import os, json, time, math, requests
+from datetime import datetime, timedelta
+import pytz
 import yfinance as yf
 
+# ====== 환경변수(Secrets) ======
+NEWS_API_KEY       = os.getenv("NEWSAPI_KEY")          # GitHub Secrets: NEWSAPI_KEY
+TELEGRAM_TOKEN     = os.getenv("TELEGRAM_TOKEN")       # GitHub Secrets: TELEGRAM_TOKEN (옵션)
+TELEGRAM_CHAT_ID   = os.getenv("TELEGRAM_CHAT_ID")     # GitHub Secrets: TELEGRAM_CHAT_ID (옵션)
+
+# ====== 경로 ======
 DATA_DIR = "data"
-os.makedirs(DATA_DIR, exist_ok=True)
+MARKET_PATH   = os.path.join(DATA_DIR, "market_today.json")
+THEME_PATH    = os.path.join(DATA_DIR, "theme_top5.json")
+KEYWORD_PATH  = os.path.join(DATA_DIR, "keyword_map.json")
 
-NEWS_API_KEY = os.getenv("NEWSAPI_KEY", "").strip()
-TG_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TG_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+# ====== 시간대 ======
+KST = pytz.timezone("Asia/Seoul")
 
-KST = timezone(timedelta(hours=9))
-
-# ---------- 유틸 ----------
-def save_json(path, obj):
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(obj, f, ensure_ascii=False, indent=2)
-
-def load_json(path, default):
-    try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-def news_api_get(url, params):
-    """NewsAPI 호출(429 대비 간단 재시도)"""
-    for i in range(3):
-        r = requests.get(url, params=params, timeout=20)
-        if r.status_code == 200:
-            return r.json()
-        if r.status_code == 429:  # rate limit
-            time.sleep(2 + i * 2)
-            continue
-        r.raise_for_status()
-    return {"status": "error", "message": "failed after retries"}
-
-# ---------- 1) 시장지표 ----------
-def fetch_market():
-    def last_close(ticker):
-        try:
-            hist = yf.Ticker(ticker).history(period="2d", interval="1d")
-            if hist.empty:
-                return None, None
-            close = float(hist["Close"].dropna().iloc[-1])
-            prev = float(hist["Close"].dropna().iloc[-2]) if len(hist) >= 2 else close
-            chg = (close - prev) / prev if prev else 0.0
-            return close, chg
-        except Exception:
-            return None, None
-
-    ks, ks_chg = last_close("^KS11")        # 코스피
-    kq, kq_chg = last_close("^KQ11")        # 코스닥
-    usdkrw, _ = last_close("USDKRW=X")      # 환율
-
-    data = {
-        "timestamp_kst": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
-        "KOSPI": {"value": ks, "pct": ks_chg},
-        "KOSDAQ": {"value": kq, "pct": kq_chg},
-        "USDKRW": {"value": usdkrw},
-        "memo": "원/달러 고평가일수록 환율 수치↑"
-    }
-    save_json(f"{DATA_DIR}/market_today.json", data)
-    return data
-
-# ---------- 2) 테마/키워드 ----------
+# ====== 테마 정의 (원하는대로 수정 가능) ======
 THEMES = {
-    "AI": ["AI", "인공지능", "생성AI", "LLM"],
-    "반도체": ["반도체", "HBM", "메모리"],
-    "로봇": ["로봇", "휴머노이드"],
-    "스마트팩토리": ["스마트팩토리", "공장자동화"],
-    "조선": ["조선", "선박"],
-    "LNG": ["LNG"],
-    "해양": ["해양", "해상풍력"],
-    "원전": ["원전", "SMR"],
-    "이차전지": ["이차전지", "배터리"],
-    "리사이클링": ["리사이클링", "재활용"],
-    "바이오": ["바이오"],
-    "에너지": ["에너지"],
-    "디지털": ["디지털"],
+    "AI":           ["AI", "인공지능", "ChatGPT", "LLM"],
+    "반도체":        ["반도체", "메모리", "HBM", "파운드리", "ASIC"],
+    "로봇":         ["로봇", "로보틱스", "스마트팩토리"],
+    "이차전지":      ["이차전지", "배터리", "LFP", "NCM", "리사이클링"],
+    "에너지":        ["에너지", "재생에너지", "태양광", "풍력", "수소"],
+    "원전/SMR":     ["원전", "원자력", "SMR"],
+    "조선/해양":     ["조선", "해양", "선박", "LNG"],
+    "바이오":        ["바이오", "제약", "신약"],
+    "디지털":        ["디지털", "클라우드", "데이터센터"],
 }
 
-STOCKS_BY_THEME = {
-    "AI": ["삼성전자", "하이닉스", "엘비세미콘", "티씨케이"],
-    "로봇": ["유진로봇", "휴림로봇", "한라캐스트"],
-    "조선": ["HD현대중공업", "대우조선해양", "대한조선"],
-    "원전": ["두산에너빌리티", "보성파워텍", "한신기계"],
-    "이차전지": ["에코프로", "성일하이텍", "새빗켐"],
-}
+# 키워드맵에 쿼리할 키워드 (너무 많으면 쿼터↑)
+KEYWORDS_FOR_MAP = [
+    "AI","반도체","HBM","메모리","GPU","로봇","스마트팩토리","자동차","조선","LNG","해양","선박",
+    "원전","원자력","SMR","양자","이차전지","리사이클링","디지털","바이오","에너지"
+]
+
+# ====== 공용 유틸 ======
+def ensure_dir(path):
+    if not os.path.exists(path):
+        os.makedirs(path, exist_ok=True)
 
 def month_range_kst():
+    """월간 범위(KST). 쿼터 절약하려면 일수를 줄이세요."""
     now = datetime.now(KST)
-    start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    end = (start + relativedelta(months=1)) - timedelta(seconds=1)
-    return start, end
+    start = (now.replace(day=1, hour=0, minute=0, second=0, microsecond=0))
+    return start, now
 
-def count_news_for_keywords(keywords, from_kst, to_kst):
+def news_api_get(url, params, max_retry=3, timeout=18):
+    for i in range(max_retry):
+        try:
+            r = requests.get(url, params=params, timeout=timeout)
+            if r.status_code == 200:
+                return r.json()
+            # 쿼터 초과·429 등은 약간 대기 후 재시도
+            time.sleep(1.5)
+        except requests.RequestException:
+            time.sleep(1.5)
+    return {"status": "error"}
+
+def build_query_or(words):
+    # "AI" OR "로봇" 형태
+    return " OR ".join([f'"{w}"' for w in words])
+
+# ====== 페이지네이션으로 기사수 합산 (중요 수정) ======
+def count_news_for_keywords(keywords, dt_from, dt_to, max_pages=10):
     if not NEWS_API_KEY:
         return 0
     url = "https://newsapi.org/v2/everything"
-    q = " OR ".join([f'"{k}"' for k in keywords])
+    q = build_query_or(keywords)
+
+    total = 0
+    page = 1
+    page_size = 100
+    while page <= max_pages:
+        params = {
+            "q": q,
+            "language": "ko",
+            "searchIn": "title,description",
+            "from": dt_from.strftime("%Y-%m-%dT%H:%M:%S"),
+            "to": dt_to.strftime("%Y-%m-%dT%H:%M:%S"),
+            "sortBy": "publishedAt",
+            "pageSize": page_size,
+            "page": page,
+            "apiKey": NEWS_API_KEY,
+        }
+        data = news_api_get(url, params)
+        if data.get("status") != "ok":
+            break
+        articles = data.get("articles", [])
+        total += len(articles)
+        if len(articles) < page_size:
+            break
+        page += 1
+        time.sleep(0.35)
+    return total
+
+def fetch_latest_headlines(keywords, dt_from, dt_to, limit=10):
+    """상위 테마용 최신 헤드라인 수집(중복 타이틀 제거)"""
+    if not NEWS_API_KEY:
+        return []
+    url = "https://newsapi.org/v2/everything"
+    q = build_query_or(keywords)
     params = {
         "q": q,
         "language": "ko",
-        "from": from_kst.strftime("%Y-%m-%dT%H:%M:%S"),
-        "to": to_kst.strftime("%Y-%m-%dT%H:%M:%S"),
-        "pageSize": 100,
-        "apiKey": NEWS_API_KEY,
+        "searchIn": "title,description",
+        "from": dt_from.strftime("%Y-%m-%dT%H:%M:%S"),
+        "to": dt_to.strftime("%Y-%m-%dT%H:%M:%S"),
         "sortBy": "publishedAt",
-    }
-    data = news_api_get(url, params)
-    if data.get("status") != "ok":
-        return 0
-    # totalResults는 1000 상한/샘플링 이슈가 있어 실제 기사 수 집계 기준은 articles 길이 합산
-    return len(data.get("articles", []))
-
-def build_theme_top5():
-    start, end = month_range_kst()
-    records = []
-    for theme, kws in THEMES.items():
-        cnt = count_news_for_keywords(kws, start, end)
-        records.append({"theme": theme, "count": int(cnt)})
-        # API rate-limit 완화
-        time.sleep(0.4)
-    # 정렬 후 상위 5개
-    records.sort(key=lambda x: x["count"], reverse=True)
-    top5 = records[:5]
-    save_json(f"{DATA_DIR}/theme_top5.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": top5})
-    return top5
-
-def build_keyword_map():
-    start, end = month_range_kst()
-    items = []
-    for theme, kws in THEMES.items():
-        cnt = count_news_for_keywords(kws, start, end)
-        items.append({"keyword": theme, "count": int(cnt)})
-        time.sleep(0.3)
-    save_json(f"{DATA_DIR}/keyword_map.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": items})
-    return items
-
-# ---------- 3) 최근 헤드라인 ----------
-def fetch_recent_headlines(limit=10):
-    if not NEWS_API_KEY:
-        return []
-    url = "https://newsapi.org/v2/top-headlines"
-    params = {
-        "country": "kr",
-        "category": "business",
-        "pageSize": limit,
+        "pageSize": 100,
+        "page": 1,
         "apiKey": NEWS_API_KEY,
     }
     data = news_api_get(url, params)
     if data.get("status") != "ok":
         return []
-    out = []
+    seen = set()
+    out  = []
     for a in data.get("articles", []):
-        out.append({"title": a.get("title"), "url": a.get("url"), "source": a.get("source", {}).get("name")})
-    save_json(f"{DATA_DIR}/recent_headlines.json", {"timestamp_kst": datetime.now(KST).isoformat(), "items": out})
+        title = a.get("title") or ""
+        url   = a.get("url")
+        if not title or not url:
+            continue
+        key = title.strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({"title": title, "url": url})
+        if len(out) >= limit:
+            break
     return out
 
-# ---------- 4) 텔레그램 알림 ----------
-def send_telegram(msg):
-    if not (TG_TOKEN and TG_CHAT_ID):
+# ====== 지표(KOSPI/KOSDAQ/USD-KRW) ======
+def fetch_market_snapshot():
+    def last_close_and_change(ticker):
+        try:
+            df = yf.download(ticker, period="5d", interval="1d", progress=False)
+            if df is None or len(df) < 2:
+                return None
+            last = float(df["Close"].iloc[-1])
+            prev = float(df["Close"].iloc[-2])
+            pct  = (last - prev) / prev * 100.0
+            return {"value": round(last, 2), "change_pct": round(pct, 2)}
+        except Exception:
+            return None
+
+    kospi  = last_close_and_change("^KS11")
+    kosdaq = last_close_and_change("^KQ11")
+    usdkor = last_close_and_change("KRW=X")  # USD/KRW
+
+    now = datetime.now(KST).strftime("%Y-%m-%d %H:%M")
+    return {
+        "updated_at_kst": now,
+        "KOSPI": kospi,
+        "KOSDAQ": kosdaq,
+        "USD_KRW": usdkor,
+        "memo": "원/달러 고평가일수록 환율 수치↑",
+    }
+
+def save_json(path, data):
+    ensure_dir(os.path.dirname(path))
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+# ====== 텔레그램 ======
+def send_telegram(text):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
         return
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
-    r = requests.post(url, data={"chat_id": TG_CHAT_ID, "text": msg, "disable_web_page_preview": True}, timeout=20)
     try:
-        r.raise_for_status()
-    except Exception as e:
-        print("Telegram send error:", r.text)
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": text, "disable_web_page_preview": True},
+            timeout=10,
+        )
+    except requests.RequestException:
+        pass
 
+# ====== 메인 파이프라인 ======
 def main():
-    mk = fetch_market()
-    top5 = build_theme_top5()
-    kw = build_keyword_map()
-    heads = fetch_recent_headlines(10)
+    ensure_dir(DATA_DIR)
+    start, end = month_range_kst()
 
-    # 텔레그램 메시지
-    up = []
-    if mk.get("KOSPI", {}).get("value") is not None:
-        up.append(f"KOSPI {mk['KOSPI']['value']:.2f} ({mk['KOSPI']['pct']*100:+.2f}%)")
-    if mk.get("KOSDAQ", {}).get("value") is not None:
-        up.append(f"KOSDAQ {mk['KOSDAQ']['value']:.2f} ({mk['KOSDAQ']['pct']*100:+.2f}%)")
-    if mk.get("USDKRW", {}).get("value") is not None:
-        up.append(f"USD/KRW {mk['USDKRW']['value']:.2f}")
+    # 1) 지표
+    market = fetch_market_snapshot()
+    save_json(MARKET_PATH, market)
 
-    theme_line = ", ".join([f"{x['theme']}({x['count']})" for x in top5]) if top5 else "데이터 없음"
-    msg = "📊 대시보드 갱신 완료\n" + " / ".join(up) + f"\n🔥 Top5: {theme_line}"
-    send_telegram(msg)
+    # 2) 테마 집계
+    theme_counts = []
+    for theme, kws in THEMES.items():
+        cnt = count_news_for_keywords(kws, start, end)
+        theme_counts.append({"theme": theme, "count": int(cnt)})
+    # 상위 5개
+    theme_counts_sorted = sorted(theme_counts, key=lambda x: x["count"], reverse=True)
+    top5 = theme_counts_sorted[:5]
+
+    # 3) 상위 1개 테마의 최신 헤드라인(Top 10)
+    headlines = []
+    if top5:
+        head = fetch_latest_headlines(THEMES[top5[0]["theme"]], start, end, limit=10)
+        headlines = head
+
+    save_json(THEME_PATH, {"updated_at_kst": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+                           "themes": theme_counts_sorted,
+                           "top5": top5,
+                           "headlines": headlines})
+
+    # 4) 월간 키워드 맵 (개별 키워드별 합계)
+    keyword_counts = []
+    for kw in KEYWORDS_FOR_MAP:
+        cnt = count_news_for_keywords([kw], start, end, max_pages=6)  # 키워드당 최대 600건 집계
+        keyword_counts.append({"keyword": kw, "count": int(cnt)})
+        time.sleep(0.25)
+    keyword_counts.sort(key=lambda x: x["count"], reverse=True)
+    save_json(KEYWORD_PATH, {"updated_at_kst": datetime.now(KST).strftime("%Y-%m-%d %H:%M"),
+                             "keywords": keyword_counts})
+
+    # 5) 텔레그램 알림(옵션)
+    up = lambda x: f"▲ {x:.2f}%" if x is not None and x >= 0 else f"▼ {abs(x):.2f}%"
+    kospi  = market.get("KOSPI")  or {}
+    kosdaq = market.get("KOSDAQ") or {}
+    fx     = market.get("USD_KRW") or {}
+
+    msg = [
+        "📰 AI 뉴스 대시보드 자동갱신 완료",
+        f"• KOSPI:  {kospi.get('value','-')} ({up(kospi.get('change_pct')) if 'change_pct' in kospi else '-'})",
+        f"• KOSDAQ: {kosdaq.get('value','-')} ({up(kosdaq.get('change_pct')) if 'change_pct' in kosdaq else '-'})",
+        f"• 환율:    {fx.get('value','-')} ({up(fx.get('change_pct')) if 'change_pct' in fx else '-'})",
+        "",
+        "🔥 TOP 5 테마:",
+    ]
+    for t in top5:
+        msg.append(f"  - {t['theme']}: {t['count']}건")
+    send_telegram("\n".join(msg))
 
 if __name__ == "__main__":
     main()
