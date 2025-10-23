@@ -1,4 +1,4 @@
-import math
+import math 
 import io  # ★ 중요: StringIO는 pandas.compat가 아니라 io에서 가져오기
 from datetime import datetime
 from zoneinfo import ZoneInfo
