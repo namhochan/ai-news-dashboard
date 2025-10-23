@@ -17,72 +17,50 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Show repo tree (before)
-        run: |
-          echo "== REPO TREE =="
-          ls -al
-          echo "== SCRIPTS =="
-          ls -al scripts || true
-          echo "== DATA =="
-          ls -al data || true
-
       - name: Verify updater exists
         run: |
           test -f scripts/update_dashboard.py || (echo "ERROR: scripts/update_dashboard.py not found" && exit 1)
 
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          python -V
-          python -m pip install --upgrade pip setuptools wheel
-          # 필요 패키지 모두 설치 (requirements가 비어도 안전)
-          if [ -f requirements.txt ]; then
-            pip install -r requirements.txt || true
-          fi
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt || true; fi
           pip install yfinance feedparser requests pytz plotly pandas
 
       - name: Run updater
-        run: |
-          set -e
-          python scripts/update_dashboard.py
+        run: python scripts/update_dashboard.py
 
       - name: Ensure data files exist
         run: |
           mkdir -p data
           [ -f data/market_today.json ] || echo "{}" > data/market_today.json
-          [ -f data/keyword_map.json ] || echo "{}" > data/keyword_map.json
           [ -f data/headlines.json ] || echo "[]" > data/headlines.json
+          [ -f data/keyword_map.json ] || echo "{}" > data/keyword_map.json
           [ -f data/theme_top5.json ] || echo "[]" > data/theme_top5.json
 
       - name: Show data snapshot
         run: |
-          echo "== DATA AFTER UPDATE =="
+          echo "== data =="
           ls -al data
-          echo "---- headlines count ----"
-          python - <<'PY'
-import json,sys
-from pathlib import Path
-p=Path("data/headlines.json")
-print(len(json.loads(p.read_text(encoding="utf-8"))) if p.exists() else 0)
-PY
           echo "---- market_today.json ----"
-          cat data/market_today.json || true
+          tail -n +1 data/market_today.json || true
 
-      - name: Pull to avoid non-fast-forward
+      - name: Pull to avoid conflicts
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git pull --rebase || true
 
-      - name: Commit & Push changes (only if changed)
+      - name: Commit & Push if changed
         run: |
           git add -A
           if git diff --cached --quiet; then
-            echo "No data changes to commit."
+            echo "No data changes."
           else
             git commit -m "auto: hourly refresh"
             git push
