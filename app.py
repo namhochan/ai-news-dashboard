@@ -9,7 +9,6 @@ from pathlib import Path
 st.set_page_config(page_title="AI 뉴스리포트 V26.0 – Web Dashboard", page_icon="📊", layout="wide")
 st.markdown("""
 <style>
-/* 모바일에서 좌우 여백/폰트 크기 살짝 줄이기 */
 .block-container { padding-top: 1.2rem; padding-bottom: 1.2rem; }
 h1, h2, h3 { line-height: 1.25; }
 </style>
@@ -35,11 +34,10 @@ def fmt_mtime(path):
         return "-"
 
 def reltime(txt):
-    """RSS/ISO 날짜를 대략적인 'n분/시간 전'으로 표시 (실패 시 빈 문자열)"""
     try:
-        if "T" in txt:  # ISO(NewsAPI 등)
+        if "T" in txt:
             dt = datetime.strptime(txt[:19], "%Y-%m-%dT%H:%M:%S")
-        else:           # RSS (간이 파싱)
+        else:
             dt = datetime.strptime(txt[:25], "%a, %d %b %Y %H:%M:%S")
         dt = KST.localize(dt)
         diff = datetime.now(KST) - dt
@@ -59,7 +57,7 @@ def dedup_by_title(items, limit=50):
         if len(out) >= limit: break
     return out
 
-# ── 데이터 로드(버튼으로 재읽기 지원)
+# ── 데이터 로드 + 사이드바 재읽기
 def read_all():
     return (
         load_json("data/market_today.json") or {},
@@ -67,10 +65,8 @@ def read_all():
         load_json("data/keyword_map.json") or {},
         load_json("data/headlines.json") or []
     )
-
 if "last_reload" not in st.session_state:
     st.session_state.last_reload = time.time()
-
 with st.sidebar:
     st.caption("⚙️ 데이터")
     if st.button("🔄 파일 다시 읽기"):
@@ -81,23 +77,18 @@ market, themes, keyword_map, headlines = read_all()
 # ── 헤더
 st.title("📊 AI 뉴스리포트 V26.0 – Web Dashboard Edition")
 st.caption("자동 생성형 뉴스·테마·수급 분석 리포트 (실시간 데이터 기반)")
-cmt = fmt_mtime("data/market_today.json")
-hlt = fmt_mtime("data/headlines.json")
-st.caption(f"⏱ 시장지표 갱신: {cmt} · 헤드라인 갱신: {hlt} (KST)")
+st.caption(f"⏱ 시장지표 갱신: {fmt_mtime('data/market_today.json')} · 헤드라인 갱신: {fmt_mtime('data/headlines.json')} (KST)")
 
 # ── 사이드바: 필터/내보내기
 with st.sidebar:
     st.markdown("---")
     st.caption("🔎 헤드라인 필터")
     query = st.text_input("키워드 포함", "")
-    # 출처 필터(동적)
     sources = sorted({(h.get("source") or "").strip() for h in (headlines or []) if h.get("source")})
     sel_sources = st.multiselect("출처 선택(옵션)", sources, default=[])
     st.markdown("---")
     st.caption("⬇️ 내보내기")
-    # CSV/JSON 다운로드
     if headlines:
-        # CSV 버퍼 생성
         buf = io.StringIO()
         writer = csv.DictWriter(buf, fieldnames=["title","url","source","published"])
         writer.writeheader()
@@ -114,21 +105,27 @@ with st.sidebar:
                            json.dumps(headlines, ensure_ascii=False, indent=2).encode("utf-8"),
                            file_name="headlines.json", mime="application/json")
 
-    with st.expander("디버그", expanded=False):
-        st.write({
-            "market_loaded": bool(market),
-            "themes_loaded": bool(themes),
-            "keyword_map_len": len(keyword_map),
-            "headlines_len": len(headlines),
-            "last_reload": st.session_state.last_reload
-        })
-
-# ── 오늘의 시장 요약
+# ── 오늘의 시장 요약 (지수=초록, 환율 상승=빨강)
 st.header("📉 오늘의 시장 요약")
+
+def fmt_val(x): 
+    try: return f"{float(x):,.2f}"
+    except: return "-"
+
+def draw_metric(col, label, blob, inverse=False):
+    if isinstance(blob, dict):
+        v   = fmt_val(blob.get("value"))
+        pct = blob.get("pct")
+        sign = "+" if pct is not None and pct >= 0 else ""
+        delta_txt = f"{sign}{pct:.2f}%"
+        col.metric(label, v, delta=delta_txt, delta_color=("inverse" if inverse else "normal"))
+    else:
+        col.metric(label, fmt_val(blob))
+
 c1, c2, c3 = st.columns(3)
-c1.metric("KOSPI",  market.get("KOSPI", "-"))
-c2.metric("KOSDAQ", market.get("KOSDAQ", "-"))
-c3.metric("환율(USD/KRW)", market.get("USD_KRW", "-"))
+draw_metric(c1, "KOSPI",  market.get("KOSPI", {}), inverse=False)
+draw_metric(c2, "KOSDAQ", market.get("KOSDAQ", {}), inverse=False)
+draw_metric(c3, "환율(USD/KRW)", market.get("USD_KRW", {}), inverse=True)
 if market:
     st.caption("메모: " + market.get("comment", ""))
 
@@ -150,8 +147,6 @@ else:
 # ── 최근 헤드라인
 st.header("📰 최근 헤드라인 Top 10")
 filtered = dedup_by_title(headlines, limit=80)
-
-# 키워드/출처 필터 적용
 if query:
     filtered = [x for x in filtered if query.lower() in (x.get("title","").lower())]
 if sel_sources:
