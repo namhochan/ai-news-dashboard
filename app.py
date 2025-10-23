@@ -284,13 +284,12 @@ st.caption(f"🗓 최근 3일 · 카테고리: {cat} · {total}개 중 {start+1}
 
 with st.expander("🧪 디버그(수집결과 및 요청 확인)"):
     st.write({"cat": cat, "total": total, "page": page, "start": start, "end": end})
-# ================================
-# 뉴스 기반 테마 감지 + 대표 종목 시세
+    # ================================
+# 뉴스 기반 테마 감지 + 대표 종목 시세 (색상/아이콘 버전)
 # ================================
 st.divider()
 st.markdown("## 🔥 뉴스 기반 테마 요약")
 
-# 1) 테마 사전 (키워드 → 테마)
 THEME_KEYWORDS = {
     "AI":        ["ai", "인공지능", "생성형", "챗봇", "오픈AI", "엔비디아", "GPU"],
     "반도체":     ["반도체", "hbm", "메모리", "파운드리", "칩", "램", "소부장"],
@@ -303,7 +302,6 @@ THEME_KEYWORDS = {
     "바이오":     ["바이오", "제약", "신약", "임상", "항암", "바이오시밀러"],
 }
 
-# 2) 테마 → 대표종목(티커) 매핑
 THEME_STOCKS = {
     "AI":       [("삼성전자","005930.KS"), ("네이버","035420.KS"), ("카카오","035720.KS"), ("더존비즈온","012510.KS")],
     "반도체":   [("삼성전자","005930.KS"), ("SK하이닉스","000660.KS"), ("DB하이텍","000990.KS"), ("한미반도체","042700.KQ")],
@@ -320,9 +318,6 @@ def normalize_text(s: str) -> str:
     return (s or "").lower()
 
 def detect_themes(news_list):
-    """
-    뉴스 타이틀/요약에서 키워드 매칭 → 테마 카운트/샘플링크
-    """
     counts = {t: 0 for t in THEME_KEYWORDS}
     sample_link = {t: "" for t in THEME_KEYWORDS}
 
@@ -346,7 +341,7 @@ def detect_themes(news_list):
     rows.sort(key=lambda x: x["count"], reverse=True)
     return rows
 
-# 3) 수집된 전체 뉴스(모든 카테고리)로 테마 스코어링
+
 all_news_3days = []
 for cat_name in CATEGORIES.keys():
     all_news_3days.extend(fetch_category_news(cat_name, days=3, max_items=100))
@@ -356,26 +351,26 @@ theme_rows = detect_themes(all_news_3days)
 if not theme_rows:
     st.info("최근 3일 기준 테마 신호가 약합니다. (매칭 결과 없음)")
 else:
-    # 상위 5개만 배지로 표시
     top5 = theme_rows[:5]
     badge_html = "<style>.tbadge{display:inline-block;margin:6px 6px 0 0;padding:6px 10px;border:1px solid #2b3a55;border-radius:10px;background:#0f1420} .tbadge b{color:#c7d2fe}</style>"
     st.markdown(badge_html, unsafe_allow_html=True)
     st.markdown("**TOP 테마**: " + " ".join([f"<span class='tbadge'><b>{r['theme']}</b> {r['count']}건</span>" for r in top5]), unsafe_allow_html=True)
 
-    # 표로 상세
     import pandas as pd
     st.dataframe(pd.DataFrame(theme_rows), use_container_width=True, hide_index=True)
 
-    st.markdown("### 🧩 대표 종목 시세 (TOP5 테마)")
-    # 테마별 대표 종목 현재가
+    st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
+
     def safe_yf_price(ticker):
         try:
             last, prev = fetch_quote(ticker)
             if last is None or prev in (None, 0):
-                return "-", "-"
-            return fmt_number(last, 0), fmt_percent((last-prev)/prev*100)
+                return None, None, "gray"
+            delta = (last - prev) / prev * 100
+            color = "red" if delta > 0 else ("blue" if delta < 0 else "gray")
+            return fmt_number(last, 0), fmt_percent(delta), color
         except Exception:
-            return "-", "-"
+            return None, None, "gray"
 
     for tr in top5:
         theme = tr["theme"]
@@ -386,6 +381,10 @@ else:
         cols = st.columns(len(stocks))
         for col, (name, ticker) in zip(cols, stocks):
             with col:
-                px, chg = safe_yf_price(ticker)
-                st.markdown(f"**{name}**  \n`ticker: {ticker}`  \n**{px}**  {chg}")
+                px, chg, color = safe_yf_price(ticker)
+                if px:
+                    arrow = "▲" if color == "red" else ("▼" if color == "blue" else "■")
+                    st.markdown(f"<b>{name}</b><br><span style='color:{color}'>{px} {arrow} {chg}</span><br><small>{ticker}</small>", unsafe_allow_html=True)
+                else:
+                    st.markdown(f"**{name}**<br>-<br><small>{ticker}</small>", unsafe_allow_html=True)
         st.divider()
