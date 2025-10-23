@@ -1,40 +1,35 @@
 name: Update AI News Dashboard (hourly)
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:     # 수동 실행 버튼
   schedule:
-    - cron: "0 * * * *"  # 매시 정각 (UTC)
+    - cron: "0 * * * *"  # 매시 정각마다 자동 실행 (UTC 기준 → 한국시간 +9h)
 
 jobs:
   update:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: Install deps
+      - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Build data (Google News RSS)
-        run: python scripts/update_dashboard.py
-
-      - name: Commit & Push data
+      - name: Run data pipeline
         run: |
-          git config user.name  "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add data/*.json || true
-          if ! git diff --cached --quiet; then
-            git commit -m "auto: hourly refresh"
-            git push
-          else
-            echo "No changes to commit."
-          fi
+          python scripts/pipeline_v1.py
+
+      - name: Commit & Push new data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git commit -m "auto: hourly update" || echo "no changes"
+          git push
