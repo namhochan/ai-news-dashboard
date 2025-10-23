@@ -389,11 +389,10 @@ else:
                     st.markdown(f"**{name}**<br>-<br><small>{ticker}</small>", unsafe_allow_html=True)
         st.divider()
 # =====================================
-# 🧠 1단계: AI 뉴스 요약엔진 (핵심 요약/감정/키워드)
+# 🧠 1단계: AI 뉴스 요약엔진 (더보기 버튼형)
 # =====================================
 import re
 from collections import Counter
-import numpy as np
 
 st.divider()
 st.markdown("## 🧠 AI 뉴스 요약엔진")
@@ -407,28 +406,39 @@ def extract_keywords(texts, topn=10):
     counter = Counter(words)
     return [w for w, _ in counter.most_common(topn)]
 
-def summarize_news(news_list, n_sent=3):
-    """뉴스 내용 중 핵심 문장 n개 추출"""
+def summarize_news(news_list, n_sent=5):
+    """뉴스 내용 중 핵심 문장 상위 n개 추출"""
     texts = [n.get("title","") + " " + n.get("desc","") for n in news_list]
     if not texts:
         return []
     full_text = " ".join(texts)
     sentences = re.split(r'[.!?]\s+', full_text)
-    sentences = [s for s in sentences if len(s.strip()) > 10]
+    sentences = [s for s in sentences if len(s.strip()) > 20]
     scores = {s: sum(word in full_text for word in s.split()) for s in sentences}
     ranked = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return [s for s, _ in ranked[:n_sent]]
 
-# 전체 뉴스 요약 실행
+# 뉴스 데이터 기반 키워드 + 요약 생성
 titles = [n["title"] for cat in CATEGORIES for n in fetch_category_news(cat, 3, 100)]
 keywords = extract_keywords(titles, topn=10)
-summary = summarize_news(all_news_3days, n_sent=3)
+summary = summarize_news(all_news_3days, n_sent=5)
 
-st.markdown(f"### 📌 핵심 키워드 TOP10")
-st.write(", ".join(keywords))
+# 핵심 키워드 출력
+st.markdown("### 📌 핵심 키워드 TOP10")
+if keywords:
+    st.write(", ".join(keywords))
+else:
+    st.info("키워드 데이터가 부족합니다.")
+
+# 더보기 버튼형 요약문
 st.markdown("### 📰 핵심 요약문")
-for s in summary:
-    st.markdown(f"- {s.strip()}")
+if summary:
+    st.markdown(f"**요약:** {summary[0][:150]}...")  # 첫 줄만 미리 보여줌
+    with st.expander("전체 요약문 보기 👇"):
+        for s in summary:
+            st.markdown(f"- {s.strip()}")
+else:
+    st.info("요약 데이터를 가져오지 못했습니다.")
 
 # =====================================
 # 📊 2단계: 테마별 상승 확률 예측 (AI 리스크레벨 + 테마강도)
