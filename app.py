@@ -543,3 +543,149 @@ else:
         )
 
 st.caption("※ AI점수 = 뉴스활성도 + 주가상승률 기반 유망도 산출")
+# =====================================
+# 🔮 4단계: '내일 오를 확률' 3일 예측 모듈
+#  - 각 종목의 과거 일봉으로 간단한 로지스틱 회귀를 학습(슬라이딩, 누수방지)
+#  - 특징: 모멘텀/변동성/RSI/이평괴리/MACD
+#  - 출력: 내일(+1) 수익률>0 확률, 3일 평균 확률, 매수/관망 신호
+# =====================================
+st.divider()
+st.markdown("## 🔮 AI 3일 예측: 내일 오를 확률")
+
+import numpy as np
+from sklearn.linear_model import LogisticRegression
+
+if 'recommend_df' not in globals() or recommend_df.empty:
+    st.info("먼저 상단의 '유망 종목 Top5'가 생성되어야 예측을 수행할 수 있어요.")
+else:
+    # --------- 유틸: 지표 ----------
+    def rsi(series: pd.Series, period: int = 14):
+        delta = series.diff()
+        up = np.where(delta > 0, delta, 0.0)
+        down = np.where(delta < 0, -delta, 0.0)
+        roll_up = pd.Series(up, index=series.index).rolling(period).mean()
+        roll_down = pd.Series(down, index=series.index).rolling(period).mean()
+        rs = roll_up / (roll_down.replace(0, np.nan))
+        r = 100 - (100 / (1 + rs))
+        return r.fillna(50)
+
+    def macd(series: pd.Series, fast=12, slow=26, signal=9):
+        ema_fast = series.ewm(span=fast, adjust=False).mean()
+        ema_slow = series.ewm(span=slow, adjust=False).mean()
+        macd_line = ema_fast - ema_slow
+        signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+        hist = macd_line - signal_line
+        return macd_line, signal_line, hist
+
+    @st.cache_data(ttl=600)
+    def load_hist(ticker: str, period="2y"):
+        df = yf.download(ticker, period=period, interval="1d", auto_adjust=True, progress=False)
+        # 야후 쿼터/휴장 이슈 방지
+        df = df[~df.index.duplicated(keep='last')].dropna()
+        return df
+
+    def build_features(df: pd.DataFrame):
+        price = df["Close"]
+        feat = pd.DataFrame(index=df.index)
+        # 모멘텀
+        feat["ret_1d"] = price.pct_change(1)
+        feat["ret_5d"] = price.pct_change(5)
+        feat["ret_10d"] = price.pct_change(10)
+        # 변동성
+        feat["vol_5d"] = df["Close"].pct_change().rolling(5).std()
+        feat["vol_20d"] = df["Close"].pct_change().rolling(20).std()
+        # RSI / MACD
+        feat["rsi_14"] = rsi(price, 14)
+        macd_line, signal_line, hist = macd(price)
+        feat["macd"] = macd_line
+        feat["macd_sig"] = signal_line
+        feat["macd_hist"] = hist
+        # 이평괴리
+        ma5 = price.rolling(5).mean(); ma20 = price.rolling(20).mean()
+        feat["ma5_gap"] = (price - ma5) / ma5
+        feat["ma20_gap"] = (price - ma20) / ma20
+        # 타깃(내일 상승?)
+        tgt = (price.shift(-1) > price).astype(int)
+        data = pd.concat([feat, tgt.rename("y")], axis=1).dropna()
+        return data
+
+    def fit_predict_prob(df_feat: pd.DataFrame):
+        """
+        단순 로지스틱 회귀. 최근 250거래일 학습, 마지막 3일 예측 확률 반환.
+        시계열 누수 방지를 위해 과거 구간만으로 학습.
+        """
+        if len(df_feat) < 120:
+            return None, None  # 데이터 부족
+        data = df_feat.copy().tail(300)  # 계산 가벼움 유지
+        X = data.drop(columns=["y"]).values
+        y = data["y"].values
+        # 학습/예측 분리: 마지막 3개를 '예측 구간'으로
+        n = len(data)
+        split = max(60, n - 3)  # 최소 60일은 학습 확보
+        X_train, y_train = X[:split], y[:split]
+        X_pred = X[split:]
+        model = LogisticRegression(max_iter=200, n_jobs=None)
+        model.fit(X_train, y_train)
+        prob = model.predict_proba(X_pred)[:, 1]  # 상승확률
+        # 내일(가장 첫 번째 예측)과 3일 평균
+        p_tomorrow = float(prob[0]) if len(prob) > 0 else None
+        p_3avg = float(prob.mean()) if len(prob) > 0 else None
+        return p_tomorrow, p_3avg
+
+    rows = []
+    with st.spinner("예측 계산 중..."):
+        for _, r in recommend_df.iterrows():
+            name, ticker = r["종목명"], r["티커"]
+            try:
+                hist = load_hist(ticker)
+                feats = build_features(hist)
+                p1, p3 = fit_predict_prob(feats)
+                if p1 is None:
+                    rows.append({"종목명": name, "티커": ticker, "내일상승확률": "-", "3일평균확률": "-", "신호": "데이터부족"})
+                    continue
+                signal = "매수관심" if p1 >= 0.55 else ("관망" if p1 >= 0.45 else "주의")
+                rows.append({
+                    "종목명": name,
+                    "티커": ticker,
+                    "내일상승확률": round(p1 * 100, 1),
+                    "3일평균확률": round(p3 * 100, 1),
+                    "신호": signal
+                })
+            except Exception:
+                rows.append({"종목명": name, "티커": ticker, "내일상승확률": "-", "3일평균확률": "-", "신호": "오류"})
+
+    pred_df = pd.DataFrame(rows)
+
+    if pred_df.empty:
+        st.info("예측을 표시할 데이터가 없습니다.")
+    else:
+        # 색상 하이라이트: 확률/신호
+        def _prob_color(v):
+            try:
+                v = float(v)
+            except:
+                return ""
+            if v >= 60:  # 높음
+                return "background-color: rgba(217,48,37,0.2); color:#ffd2cf; font-weight:700;"
+            if v >= 50:  # 보통
+                return "background-color: rgba(255,193,7,0.15);"
+            return "background-color: rgba(26,115,232,0.18); color:#d7e6ff;"
+
+        st.dataframe(
+            pred_df.style.map(_prob_color, subset=["내일상승확률", "3일평균확률"]),
+            use_container_width=True, hide_index=True
+        )
+
+        # 요약 문장
+        st.markdown("### 🧠 AI 인사이트")
+        for _, row in pred_df.iterrows():
+            if row["내일상승확률"] == "-":
+                st.markdown(f"- **{row['종목명']} ({row['티커']})** — 데이터 부족/오류로 예측 생략")
+            else:
+                arrow = "🔺" if row["내일상승확률"] >= 50 else "🔻"
+                st.markdown(
+                    f"- **{row['종목명']} ({row['티커']})** — 내일 상승 확률 **{row['내일상승확률']}%** "
+                    f"(3일 평균 {row['3일평균확률']}%), 신호: **{row['신호']}** {arrow}"
+                )
+
+st.caption("※ 간단한 로지스틱 회귀 기반 참고지표입니다. 투자 판단의 책임은 본인에게 있습니다.")
