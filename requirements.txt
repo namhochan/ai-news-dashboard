@@ -1,6 +1,7 @@
 streamlit
 plotly
 pandas
-requests
+feedparser
 yfinance
 pytz
+beautifulsoup4
