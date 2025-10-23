@@ -1,262 +1,289 @@
-# app.py
-# AI 뉴스리포트 종합 대시보드 (강화판)
-# - 지수/환율/원자재: 런타임 yfinance 폴백 + KOSDAQ 다중 티커 시도
-# - 모든 섹션 방어: 파일 없어도/필드 형태 달라도 크래시 방지
-# - 표시는 안전하게 "-", "None"으로 처리
-
-import os
-import json
+# app.py — 파일/외부데이터 없어도 바로 동작하도록 자급자족 버전
+import os, json, re
 from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple
 
 import streamlit as st
 import pandas as pd
 
-# ===== UI =====
-st.set_page_config(page_title="AI 뉴스리포트 종합 대시보드", layout="wide")
+# ---- 공통 ----
 KST = timezone(timedelta(hours=9))
+st.set_page_config(page_title="AI 뉴스리포트 종합 대시보드", layout="wide")
 st.markdown("# 🧠 AI 뉴스리포트 종합 대시보드 (자동 업데이트)")
 st.caption("업데이트 시간: " + datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S (KST)"))
 
-# ===== 공용 유틸 =====
-def load_json_safe(path: str, default: Any) -> Any:
+def kst_now_iso(): return datetime.now(KST).isoformat()
+
+def load_json(path: str, default: Any):
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
+        with open(path, "r", encoding="utf-8") as f: return json.load(f)
+    except Exception: return default
 
-def kst_now_iso() -> str:
-    return datetime.now(KST).isoformat()
+def to_f(x): 
+    try: return None if x is None else float(x)
+    except: return None
 
-def to_float_safe(x) -> Optional[float]:
-    try:
-        if x is None:
-            return None
-        return float(x)
-    except Exception:
-        return None
-
-# ===== yfinance 폴백 (지수/환율/원자재) =====
+# ---- 지수/환율/원자재: yfinance 1차 + Stooq(데이터리더) 2차 폴백 ----
 import yfinance as yf
+from pandas_datareader import data as pdr
 
-# KOSDAQ은 지역/프로바이더 따라 다릅니다. 후보를 차례로 시도합니다.
-KOSDAQ_CANDIDATES = ["^KQ11", "^KOSDAQ", "KQ11"]
-
-FALLBACK_TICKERS = {
+FALLBACK = {
     "KOSPI":  ["^KS11"],
-    "KOSDAQ": KOSDAQ_CANDIDATES,
+    "KOSDAQ": ["^KQ11","^KOSDAQ","KQ11"],
     "USDKRW": ["KRW=X"],
     "WTI":    ["CL=F"],
     "Gold":   ["GC=F"],
     "Copper": ["HG=F"],
 }
 
-def _last_two_prices_try(ticker: str) -> Tuple[Optional[float], Optional[float]]:
+def _yf_last2(tick: str)->Tuple[Optional[float],Optional[float]]:
     try:
-        df = yf.download(ticker, period="10d", interval="1d", progress=False)
-        closes = df.get("Close")
-        if closes is None:
-            return None, None
-        vals = closes.dropna().tail(2).tolist()
-        if len(vals) == 1:
-            return float(vals[0]), None
-        if len(vals) >= 2:
-            return float(vals[-1]), float(vals[-2])
-    except Exception:
-        pass
+        df = yf.download(tick, period="10d", interval="1d", progress=False)
+        c = df.get("Close")
+        if c is None: return None, None
+        vals = c.dropna().tail(2).tolist()
+        if len(vals)==1: return float(vals[0]), None
+        if len(vals)>=2: return float(vals[-1]), float(vals[-2])
+    except: pass
     return None, None
 
-def last_two_prices_any(tickers: List[str]) -> Tuple[Optional[float], Optional[float], Optional[str]]:
-    for t in tickers:
-        cur, prev = _last_two_prices_try(t)
-        if cur is not None:
-            return cur, prev, t
+def _stooq_last2(symbol: str)->Tuple[Optional[float],Optional[float]]:
+    # Stooq 심볼은 전세계 공통이지만 KOSPI/KOSDAQ은 없을 수 있음(그 경우 None 반환)
+    try:
+        df = pdr.DataReader(symbol, "stooq")  # 예: ^DJI, ^SPX 등 — 국내는 미지원일 수도
+        c = df.get("Close")
+        if c is None: return None, None
+        vals = c.sort_index().dropna().tail(2).tolist()
+        if len(vals)==1: return float(vals[0]), None
+        if len(vals)>=2: return float(vals[-1]), float(vals[-2])
+    except: pass
+    return None, None
+
+def last2_any(candidates: List[str])->Tuple[Optional[float],Optional[float],Optional[str]]:
+    # 1) yfinance 시도
+    for t in candidates:
+        cur, prev = _yf_last2(t); 
+        if cur is not None: return cur, prev, t
+    # 2) stooq 시도
+    for t in candidates:
+        cur, prev = _stooq_last2(t); 
+        if cur is not None: return cur, prev, f"stooq:{t}"
     return None, None, None
 
-def pct_change(cur: Optional[float], prev: Optional[float]) -> Optional[float]:
+def pct(cur, prev):
     try:
-        if prev in (None, 0) or cur is None:
-            return None
-        return round((cur - prev) / prev * 100.0, 2)
-    except Exception:
-        return None
+        if cur is None or prev in (None, 0): return None
+        return round((cur-prev)/prev*100,2)
+    except: return None
 
-def is_stale(asof_iso: Optional[str], max_hours: int = 6) -> bool:
-    try:
-        if not asof_iso:
-            return True
-        asof = datetime.fromisoformat(asof_iso)
-        age = datetime.now(KST) - asof
-        return age.total_seconds() > max_hours * 3600
-    except Exception:
-        return True
-
-def load_market_with_fallback(local_json_path: str) -> Dict[str, Any]:
-    """로컬 JSON을 우선 읽고, 비었거나 오래됐으면 yfinance로 채움(파일도 갱신)."""
-    data: Dict[str, Any] = load_json_safe(local_json_path, default={})
-    updated = False
-
-    for name, candidates in FALLBACK_TICKERS.items():
-        entry = data.get(name, {})
-        val = to_float_safe(entry.get("value"))
-        asof = entry.get("asof")
-
-        if val is None or is_stale(asof):
-            cur, prev, used = last_two_prices_any(candidates)
-            chg = pct_change(cur, prev)
+def load_market()->Dict[str,Any]:
+    data = load_json("data/market_today.json", {})
+    updated=False
+    for name, cands in FALLBACK.items():
+        cur = to_f(data.get(name,{}).get("value"))
+        asof = data.get(name,{}).get("asof")
+        stale = True
+        try:
+            if asof: stale = (datetime.now(KST)-datetime.fromisoformat(asof)).total_seconds()>6*3600
+        except: pass
+        if cur is None or stale:
+            v, p, used = last2_any(cands)
             data[name] = {
-                "value": None if cur is None else round(cur, 2),
-                "prev":  None if prev is None else round(prev, 2),
-                "change_pct": chg,
+                "value": None if v is None else round(v,2),
+                "prev": None if p is None else round(p,2),
+                "change_pct": pct(v,p),
                 "ticker": used,
                 "asof": kst_now_iso()
             }
-            updated = True
-
+            updated=True
     if updated:
         try:
-            os.makedirs(os.path.dirname(local_json_path), exist_ok=True)
-            with open(local_json_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception:
-            pass
+            os.makedirs("data", exist_ok=True)
+            with open("data/market_today.json","w",encoding="utf-8") as f:
+                json.dump(data,f,ensure_ascii=False,indent=2)
+        except: pass
     return data
 
-# ===== 데이터 로드 =====
-market = load_market_with_fallback("data/market_today.json")
+# ---- 뉴스: 파일 없으면 RSS 직접 읽어서 생성 (Google 뉴스/정책브리핑) ----
+import feedparser
 
-# headlines_top10.json은 항목이 dict 또는 문자열일 수 있어 방어 처리
-raw_headlines: Any = load_json_safe("data/headlines_top10.json", default=[])
-# themes_scored.json (선택)
-raw_themes: Any = load_json_safe("data/themes_scored.json", default=[])
-# keywords_monthly.json (선택)
-raw_keywords: Any = load_json_safe("data/keywords_monthly.json", default=[])
+NEWS_QUERIES = [
+    # 경제/정책/산업/리포트
+    "site:mk.co.kr 경제", "site:hankyung.com 경제", "site:biz.chosun.com 산업",
+    "site:news1.kr 정책", "site:yna.co.kr 리포트", "site:policy.go.kr 정책브리핑"
+]
 
-# ===== 렌더링 =====
-def render_market_cards(market_data: Dict[str, Any]):
-    st.subheader("📊 오늘의 시장 요약")
-    col1, col2, col3 = st.columns(3)
-    col4, col5, col6 = st.columns(3)
+def google_rss(query, hl="ko", gl="KR", ceid="KR:ko"):
+    # 공백/OR를 URL에 안전하게
+    from urllib.parse import quote
+    return f"https://news.google.com/rss/search?q={quote(query)}&hl={hl}&gl={gl}&ceid={ceid}"
 
-    def metric_block(col, title, key):
-        d = market_data.get(key, {})
-        val = to_float_safe(d.get("value"))
-        chg = to_float_safe(d.get("change_pct"))
-        if val is None:
-            col.metric(title, value="-", delta="None")
-        else:
-            vtxt = f"{val:,.2f}"
-            col.metric(title, value=vtxt, delta="None" if chg is None else f"{chg:+.2f}%")
+def fetch_headlines_top10()->List[Dict[str,str]]:
+    items=[]
+    for q in NEWS_QUERIES:
+        url=google_rss(q)
+        try:
+            feed = feedparser.parse(url)
+            for e in feed.entries[:5]:
+                title = e.get("title","").strip()
+                link  = e.get("link","").strip()
+                if title and link:
+                    items.append({"title":title,"link":link})
+        except: 
+            pass
+    # 중복 제거
+    seen=set(); uniq=[]
+    for it in items:
+        if it["title"] in seen: continue
+        seen.add(it["title"]); uniq.append(it)
+    return uniq[:10]
 
-    metric_block(col1, "KOSPI", "KOSPI")
-    metric_block(col2, "KOSDAQ", "KOSDAQ")
-    metric_block(col3, "환율(USD/KRW)", "USDKRW")
-    metric_block(col4, "WTI", "WTI")
-    metric_block(col5, "Gold", "Gold")
-    metric_block(col6, "Copper", "Copper")
+# ---- 테마 추출: 키워드 매핑 기반 자동 집계 ----
+THEME_KEYWORDS = {
+    "AI": ["AI","인공지능","생성형","챗GPT","LLM"],
+    "반도체": ["반도체","HBM","파운드리","메모리","GPU","칩"],
+    "로봇": ["로봇","협동로봇","자율주행로봇"],
+    "이차전지": ["이차전지","배터리","양극재","음극재","전고체"],
+    "바이오": ["바이오","제약","의약품","임상"],
+    "조선": ["조선","선박","해운","LNG선"],
+    "원전": ["원전","SMR","원자력"],
+    "에너지": ["전력","정유","가스","재생에너지","풍력","태양광"],
+}
 
-def normalize_headlines(items: Any) -> List[Dict[str, str]]:
-    """각 항목이 dict 또는 문자열이어도 title/link 필드를 만들어 반환."""
-    norm: List[Dict[str, str]] = []
-    if not isinstance(items, list):
-        return norm
-    for x in items:
-        if isinstance(x, dict):
-            title = str(x.get("title") or x.get("headline") or x.get("t") or "").strip()
-            link = str(x.get("link") or x.get("url") or "#").strip()
-        elif isinstance(x, str):
-            title, link = x.strip(), "#"
-        else:
-            title, link = "", "#"
-        if title:
-            norm.append({"title": title, "link": link})
-    return norm
+# 대표 종목(옵션 표기)
+THEME_STOCKS = {
+    "AI": ["삼성전자","네이버","카카오","더존비즈온","티맥스소프트"],
+    "반도체": ["삼성전자","SK하이닉스","DB하이텍","한미반도체","테스"],
+    "로봇": ["레인보우로보틱스","유진로봇","티로보틱스","로보스타","현대로보틱스"],
+    "이차전지": ["LG에너지솔루션","포스코퓨처엠","에코프로","에코프로비엠","엘앤에프"],
+    "바이오": ["삼성바이오로직스","셀트리온","HLB","에스티팜","메디톡스"],
+    "조선": ["HD한국조선해양","HD현대미포","삼성중공업","한화오션","HSD엔진"],
+    "원전": ["두산에너빌리티","우진","한전KPS","한전기술","일진파워"],
+    "에너지": ["한국전력","두산에너빌리티","GS","SK이노베이션","한국가스공사"],
+}
 
-def render_headlines(items: Any):
-    st.subheader("📰 최신 경제·정책·산업·리포트 뉴스 TOP 10")
-    rows = normalize_headlines(items)
-    if not rows:
-        st.info("헤드라인 없음")
-        return
-    for i, n in enumerate(rows, start=1):
-        title = n.get("title", "(제목 없음)")
-        link = n.get("link", "#") or "#"
-        # 내부 markdown 안전 처리
-        esc_title = title.replace("[", "［").replace("]", "］")
-        st.markdown(f"{i}. [{esc_title}]({link})")
+def tokenize_ko(text:str)->List[str]:
+    # 간단 토크나이저(형태소기반 아님) — 한글/영문/숫자만 남김
+    text = re.sub(r"[^0-9A-Za-z가-힣 ]"," ", text)
+    return [t for t in text.split() if t]
 
-def normalize_themes(items: Any) -> pd.DataFrame:
-    """theme/count/score/sample_link/rep_stocks(옵션)을 가진 DataFrame으로 변환."""
-    if not isinstance(items, list) or not items:
-        return pd.DataFrame(columns=["theme", "count", "score", "sample_link", "rep_stocks"])
-    out = []
-    for x in items:
-        if not isinstance(x, dict):
-            continue
-        theme = str(x.get("theme") or x.get("name") or "").strip()
-        count = to_float_safe(x.get("count")) or 0
-        score = to_float_safe(x.get("score")) or count
-        slink = str(x.get("sample_link") or x.get("link") or "")
-        stocks = x.get("rep_stocks") or x.get("stocks") or []
-        if isinstance(stocks, list):
-            stocks_txt = " · ".join([str(s) for s in stocks])
-        else:
-            stocks_txt = str(stocks)
-        if theme:
-            out.append({"theme": theme, "count": count, "score": score, "sample_link": slink, "rep_stocks": stocks_txt})
-    return pd.DataFrame(out)
+def score_themes(news: List[Dict[str,str]])->pd.DataFrame:
+    counts = {k:0 for k in THEME_KEYWORDS}
+    sample = {k:"" for k in THEME_KEYWORDS}
+    for n in news:
+        title = n.get("title","")
+        tokens = tokenize_ko(title)
+        tset = " ".join(tokens)
+        for theme, keys in THEME_KEYWORDS.items():
+            if any(k in tset for k in keys):
+                counts[theme]+=1
+                if not sample[theme]: sample[theme]=n.get("link","#")
+    rows=[]
+    for th, ct in counts.items():
+        if ct>0:
+            rows.append({
+                "theme": th,
+                "count": ct,
+                "score": ct,      # 간단 점수 = 빈도 (원하면 감쇠 가중치 추가 가능)
+                "rep_stocks": " · ".join(THEME_STOCKS.get(th, [])),
+                "sample_link": sample[th]
+            })
+    return pd.DataFrame(rows).sort_values(["score","count"], ascending=False)
 
-def render_theme_chart(items: Any):
-    st.subheader("🔥 뉴스 기반 TOP 테마")
-    df = normalize_themes(items)
-    if df.empty:
-        st.info("테마 데이터 없음")
-        return
+def monthly_keywords(news: List[Dict[str,str]])->pd.DataFrame:
+    bag={}
+    for n in news:
+        for w in tokenize_ko(n.get("title","")):
+            if len(w)<2: continue
+            bag[w]=bag.get(w,0)+1
+    rows = sorted(bag.items(), key=lambda x:x[1], reverse=True)[:30]
+    return pd.DataFrame([{"keyword":k,"count":v} for k,v in rows])
+
+# ---- 데이터 준비 (파일 없으면 즉석 생성) ----
+market = load_market()
+
+headlines = load_json("data/headlines_top10.json", [])
+if not headlines:
+    headlines = fetch_headlines_top10()
     try:
-        # count 기준 상위 10개만 표시
-        top = df.sort_values(["score", "count"], ascending=False).head(10)
-        st.bar_chart(top.set_index("theme")["count"])
-        with st.expander("전체 테마 집계 (감쇠 점수 포함)"):
-            st.dataframe(df.reset_index(drop=True), use_container_width=True)
-    except Exception as e:
-        st.warning(f"테마 시각화 중 오류: {e}")
+        os.makedirs("data", exist_ok=True)
+        with open("data/headlines_top10.json","w",encoding="utf-8") as f:
+            json.dump(headlines,f,ensure_ascii=False,indent=2)
+    except: pass
 
-def normalize_keywords(items: Any) -> pd.DataFrame:
-    if not isinstance(items, list) or not items:
-        return pd.DataFrame(columns=["keyword", "count"])
-    out = []
-    for x in items:
-        if isinstance(x, dict):
-            kw = str(x.get("keyword") or x.get("key") or "").strip()
-            ct = to_float_safe(x.get("count")) or 0
-        elif isinstance(x, (list, tuple)) and len(x) >= 2:
-            kw = str(x[0]).strip()
-            ct = to_float_safe(x[1]) or 0
-        else:
-            kw, ct = "", 0
-        if kw:
-            out.append({"keyword": kw, "count": ct})
-    return pd.DataFrame(out)
+themes_df = None
+try:
+    raw_themes = load_json("data/themes_scored.json", [])
+    if isinstance(raw_themes, list) and raw_themes:
+        # 파일이 있으면 그걸 사용
+        themes_df = pd.DataFrame(raw_themes)
+except: pass
 
-def render_monthly_keywords(items: Any):
-    st.subheader("🌐 월간 키워드맵 (최근 30일)")
-    df = normalize_keywords(items)
-    if df.empty:
-        st.info("키워드 없음")
-        return
-    try:
-        st.bar_chart(df.set_index("keyword")["count"])
-    except Exception as e:
-        st.warning(f"키워드 시각화 중 오류: {e}")
+if themes_df is None:
+    # 파일이 없으면 헤드라인 100개까지 즉석 수집 후 테마 집계
+    more_news = headlines[:]
+    if len(more_news) < 60:
+        # 쿼리별 더 가져와서 채우기
+        for q in NEWS_QUERIES:
+            url = google_rss(q)
+            try:
+                feed = feedparser.parse(url)
+                for e in feed.entries[:20]:
+                    t = e.get("title","").strip()
+                    l = e.get("link","").strip()
+                    if t and l: more_news.append({"title":t,"link":l})
+            except: pass
+    themes_df = score_themes(more_news)
 
-# ===== 출력 =====
-render_market_cards(market)
+keywords_df = None
+try:
+    raw_kw = load_json("data/keywords_monthly.json", [])
+    if isinstance(raw_kw, list) and raw_kw:
+        keywords_df = pd.DataFrame(raw_kw)
+except: pass
+if keywords_df is None:
+    keywords_df = monthly_keywords(headlines)
+
+# ---- 렌더링 ----
+def metric_block(col, title, entry: Dict[str,Any]):
+    v = to_f(entry.get("value"))
+    d = to_f(entry.get("change_pct"))
+    if v is None: col.metric(title, value="-", delta="None")
+    else: col.metric(title, value=f"{v:,.2f}", delta=("None" if d is None else f"{d:+.2f}%"))
+
+st.subheader("📊 오늘의 시장 요약")
+c1,c2,c3 = st.columns(3); c4,c5,c6 = st.columns(3)
+metric_block(c1, "KOSPI"        , market.get("KOSPI",{}))
+metric_block(c2, "KOSDAQ"       , market.get("KOSDAQ",{}))
+metric_block(c3, "환율(USD/KRW)" , market.get("USDKRW",{}))
+metric_block(c4, "WTI"          , market.get("WTI",{}))
+metric_block(c5, "Gold"         , market.get("Gold",{}))
+metric_block(c6, "Copper"       , market.get("Copper",{}))
+
 st.divider()
-render_headlines(raw_headlines)
-st.divider()
-render_theme_chart(raw_themes)
-st.divider()
-render_monthly_keywords(raw_keywords)
+st.subheader("📰 최신 경제·정책·산업·리포트 뉴스 TOP 10")
+if not headlines:
+    st.info("헤드라인 없음")
+else:
+    for i,n in enumerate(headlines[:10], start=1):
+        title = n.get("title","").replace("[","［").replace("]","］")
+        link  = n.get("link","#") or "#"
+        st.markdown(f"{i}. [{title}]({link})")
 
-st.success("대시보드 로딩 완료 (강화 방어 로직 적용)")
+st.divider()
+st.subheader("🔥 뉴스 기반 TOP 테마")
+if themes_df is None or themes_df.empty:
+    st.info("테마 데이터 없음")
+else:
+    st.bar_chart(themes_df.set_index("theme")["count"])
+    with st.expander("전체 테마 집계 (대표 종목/샘플링크 포함)"):
+        st.dataframe(themes_df.reset_index(drop=True), use_container_width=True)
+
+st.divider()
+st.subheader("🌐 월간 키워드맵 (최근 30일)")
+if keywords_df is None or keywords_df.empty:
+    st.info("키워드 없음")
+else:
+    st.bar_chart(keywords_df.set_index("keyword")["count"])
+
+st.success("대시보드 로딩 완료 (자급자족 모드 + 폴백/방어 적용)")
