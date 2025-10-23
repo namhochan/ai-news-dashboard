@@ -3,5 +3,4 @@ plotly
 pandas
 requests
 yfinance
-python-dateutil
 pytz
