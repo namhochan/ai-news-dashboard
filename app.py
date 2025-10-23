@@ -221,3 +221,80 @@ st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (yfinan
 # -----------------------------
 with st.expander("🧪 디버그(수집결과 확인)"):
     st.dataframe(pd.DataFrame(dbg))
+# =============================================
+# 📰 뉴스 섹션 - Google RSS 기반 크롤링
+# =============================================
+import feedparser
+from bs4 import BeautifulSoup
+from datetime import timedelta
+
+st.divider()
+st.markdown("## 📰 최신 뉴스 요약")
+
+def clean_html(raw_html):
+    if not raw_html:
+        return ""
+    soup = BeautifulSoup(raw_html, "html.parser")
+    return soup.get_text()
+
+def fetch_google_news(query, days=3, max_items=100):
+    """
+    Google News RSS 크롤링 (최근 3일)
+    """
+    rss_url = f"https://news.google.com/rss/search?q={query}+when:3d&hl=ko&gl=KR&ceid=KR:ko"
+    feed = feedparser.parse(rss_url)
+    now = datetime.now(KST)
+    results = []
+    for entry in feed.entries[:max_items]:
+        try:
+            title = entry.title
+            link = entry.link.replace("./articles/", "https://news.google.com/articles/")
+            published = None
+            if hasattr(entry, "published_parsed"):
+                pub_dt = datetime(*entry.published_parsed[:6])
+                if (now - pub_dt) > timedelta(days=days):
+                    continue
+                published = pub_dt.strftime("%Y-%m-%d %H:%M")
+            desc = clean_html(entry.get("summary", ""))
+            results.append({
+                "title": title,
+                "link": link,
+                "desc": desc,
+                "time": published or "-"
+            })
+        except Exception:
+            continue
+    return results
+
+# 뉴스 카테고리별 수집
+CATEGORIES = {
+    "경제뉴스": "경제 OR 물가 OR 환율 OR 무역 OR 금리 OR 성장률",
+    "주식뉴스": "코스피 OR 코스닥 OR 증시 OR 주가 OR 매수 OR 기관 OR 외국인",
+    "산업뉴스": "산업 OR 반도체 OR 배터리 OR 로봇 OR 제조 OR 수출입",
+    "정책뉴스": "정책 OR 정부 OR 예산 OR 세금 OR 규제 OR 지원 OR 산업부 OR 금융위",
+}
+
+news_data = {}
+for cat, query in CATEGORIES.items():
+    news_data[cat] = fetch_google_news(query, days=3, max_items=100)
+
+# 페이지네이션
+PER_PAGE = 10
+cat_selected = st.selectbox("📂 뉴스 카테고리 선택", list(news_data.keys()))
+
+page_max = (len(news_data[cat_selected]) - 1) // PER_PAGE + 1
+page = st.number_input("페이지 이동", min_value=1, max_value=page_max, value=1, step=1)
+
+start = (page - 1) * PER_PAGE
+end = start + PER_PAGE
+subset = news_data[cat_selected][start:end]
+
+# 뉴스 카드 표시
+for n in subset:
+    st.markdown(f"#### [{n['title']}]({n['link']})")
+    st.caption(f"🕒 {n['time']}")
+    if n["desc"]:
+        st.write(n["desc"])
+    st.markdown("---")
+
+st.caption(f"📆 최근 3일 이내 | 카테고리: {cat_selected} | {len(news_data[cat_selected])}개 중 {start+1}~{min(end, len(news_data[cat_selected]))} 표시")
