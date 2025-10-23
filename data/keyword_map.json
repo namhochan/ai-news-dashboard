@@ -1,90 +1,57 @@
-[
-  {
-    "keyword": "AI",
-    "count": 10
-  },
-  {
-    "keyword": "반도체",
-    "count": 10
-  },
-  {
-    "keyword": "HBM",
-    "count": 10
-  },
-  {
-    "keyword": "메모리",
-    "count": 10
-  },
-  {
-    "keyword": "GPU",
-    "count": 10
-  },
-  {
-    "keyword": "칩",
-    "count": 10
-  },
-  {
-    "keyword": "로봇",
-    "count": 10
-  },
-  {
-    "keyword": "스마트팩토리",
-    "count": 10
-  },
-  {
-    "keyword": "자동화",
-    "count": 10
-  },
-  {
-    "keyword": "조선",
-    "count": 10
-  },
-  {
-    "keyword": "LNG",
-    "count": 10
-  },
-  {
-    "keyword": "해양",
-    "count": 10
-  },
-  {
-    "keyword": "선박",
-    "count": 10
-  },
-  {
-    "keyword": "원전",
-    "count": 10
-  },
-  {
-    "keyword": "원자력",
-    "count": 10
-  },
-  {
-    "keyword": "SMR",
-    "count": 10
-  },
-  {
-    "keyword": "원전수출",
-    "count": 10
-  },
-  {
-    "keyword": "이차전지",
-    "count": 10
-  },
-  {
-    "keyword": "2차전지",
-    "count": 10
-  },
-  {
-    "keyword": "리사이클링",
-    "count": 10
-  },
-  {
-    "keyword": "양극재",
-    "count": 10
-  },
-  {
-    "keyword": "음극재",
-    "count": 10
-  }
-]
+{
+  "timestamp_kst": "2025-10-23T16:26:50.917096+09:00",
+  "items": [
+    {
+      "keyword": "AI",
+      "count": 100
+    },
+    {
+      "keyword": "반도체",
+      "count": 100
+    },
+    {
+      "keyword": "로봇",
+      "count": 100
+    },
+    {
+      "keyword": "스마트팩토리",
+      "count": 7
+    },
+    {
+      "keyword": "조선",
+      "count": 94
+    },
+    {
+      "keyword": "LNG",
+      "count": 15
+    },
+    {
+      "keyword": "해양",
+      "count": 27
+    },
+    {
+      "keyword": "원전",
+      "count": 35
+    },
+    {
+      "keyword": "이차전지",
+      "count": 100
+    },
+    {
+      "keyword": "리사이클링",
+      "count": 27
+    },
+    {
+      "keyword": "바이오",
+      "count": 37
+    },
+    {
+      "keyword": "에너지",
+      "count": 100
+    },
+    {
+      "keyword": "디지털",
+      "count": 100
+    }
+  ]
+}
