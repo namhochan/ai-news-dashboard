@@ -1,3 +1,5 @@
+update: add headlines.json auto generation
+
 import json, os, re
 from datetime import datetime
 from collections import Counter
