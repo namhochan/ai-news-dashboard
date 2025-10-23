@@ -3,3 +3,4 @@ yfinance>=0.2.43
 pandas>=2.2
 feedparser>=6.0
 beautifulsoup4>=4.12
+scikit-learn>=1.3
