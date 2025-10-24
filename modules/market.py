@@ -25,26 +25,38 @@ def fmt_percent(v):
 
 def fetch_quote(ticker: str):
     """
-    조정 종가(Adj Close, auto_adjust=True) 기준으로
-    '마지막 종가'와 '직전 종가'를 안전하게 반환 + 마지막 거래량.
+    1) Ticker.fast_info (last_price / previous_close / last_volume)
+    2) 실패 시 history(period=10d, 1d, auto_adjust=True)
+    -> (last, prev, volume) 반환. 실패 시 (None, None, None)
     """
+    # 1) fast_info 시도
     try:
-        df = yf.download(
-            ticker, period="14d", interval="1d",
-            auto_adjust=True, progress=False
-        )
+        t = yf.Ticker(ticker)
+        fi = getattr(t, "fast_info", None)
+        if fi:
+            last = getattr(fi, "last_price", None)
+            prev = getattr(fi, "previous_close", None)
+            vol  = getattr(fi, "last_volume", None)
+            if last and prev:
+                return float(last), float(prev), (int(vol) if vol else None)
+    except Exception:
+        pass
+
+    # 2) history() 폴백
+    try:
+        df = yf.Ticker(ticker).history(period="10d", interval="1d", auto_adjust=True)
         if df is None or df.empty:
             return None, None, None
-
         closes = df["Close"].dropna()
-        vols   = df.get("Volume", None)
-
+        vols = df.get("Volume")
         if len(closes) < 2:
             return None, None, None
-
         last = float(closes.iloc[-1])
         prev = float(closes.iloc[-2])
-        vol  = int(vols.iloc[-1]) if vols is not None and not np.isnan(vols.iloc[-1]) else None
+        vol = None
+        if vols is not None:
+            v = vols.iloc[-1]
+            vol = int(v) if v == v else None  # NaN 체크
         return last, prev, vol
     except Exception:
         return None, None, None
@@ -66,7 +78,7 @@ def build_ticker_items():
     for (name, ticker, dp) in rows:
         last, prev, _ = fetch_quote(ticker)
         pct = None
-        if last and prev:
+        if last is not None and prev not in (None, 0):
             pct = (last - prev) / prev * 100.0
         items.append({
             "name": name,
