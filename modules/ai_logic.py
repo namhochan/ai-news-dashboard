@@ -1,5 +1,5 @@
 # modules/ai_logic.py
-# 간단 요약/키워드, 테마 리포트, 유망종목(테마다 1종목) 선택 로직
+# 요약/테마 리포트/유망종목(테마다 1종목) 선택 로직
 
 from __future__ import annotations
 import re
@@ -60,17 +60,20 @@ def make_theme_report(theme_rows, theme_stocks_map):
     return pd.DataFrame(rows)
 
 # ---------- 유망 종목 (테마다 1종목) ----------
+# (필터 완화) 거래량 30,000주 이상만 필터링, 이상치 제거 한도 상향
 MAX_ABS_MOVE = 25.0     # 점수 계산용 캡(±25%)
-OUTLIER_DROP = 30.0     # 절대 30% 넘으면 제외
-MIN_VOLUME   = 100_000  # 거래량 하한
+OUTLIER_DROP = 35.0     # 절대 35% 넘으면 제외
+MIN_VOLUME   = 30_000   # 거래량 하한 (vol 정보 없으면 통과)
 
 def _safe_delta_pct(ticker: str):
     last, prev, vol = fetch_quote(ticker)
     if not last or not prev:
         return None
     pct = (last - prev) / prev * 100.0
+    # 거래량 체크(정보가 있을 때만)
     if vol is not None and vol < MIN_VOLUME:
         return None
+    # 급격한 이상치 제거
     if abs(pct) > OUTLIER_DROP:
         return None
     pct_for_score = float(np.clip(pct, -MAX_ABS_MOVE, MAX_ABS_MOVE))
@@ -79,7 +82,7 @@ def _safe_delta_pct(ticker: str):
 def pick_promising_by_theme_once(theme_rows, theme_stocks_map, top_n=5):
     """
     테마다 1종목씩 뽑아 Top N 구성.
-    스코어 = 뉴스빈도(정규화) * 0.4 + (캡핑된 일간등락률/MAX_ABS_MOVE) * 0.6
+    스코어 = 뉴스빈도(정규화)*0.4 + (캡핑된 일간등락률/MAX_ABS_MOVE)*0.6   (-100~100 환산)
     """
     selected = []
     for tr in theme_rows:
