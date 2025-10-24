@@ -1,136 +1,142 @@
-# -*- coding: utf-8 -*-
+# app.py
+# 대시보드 본체 (분리 모듈 활용)
+
+from __future__ import annotations
+from datetime import datetime
+from zoneinfo import ZoneInfo
 import streamlit as st
-
-# ---- 가장 먼저 페이지 설정 (Streamlit 규칙) ----
-st.set_page_config(page_title="AI 뉴스리포트", layout="wide")
-
-# ---- 부트 마커: 어디서 멈췄는지 보이도록 ----
-st.write("BOOT-1: app.py start")
-
-# ---- 모듈 임포트 가드: 실패하면 화면에 바로 에러 표시 ----
-try:
-    from modules.style import inject_base_css, render_quick_menu
-    from modules.market import build_ticker_items, render_ticker_line
-    from modules.news import (
-        CATEGORIES, fetch_category_news, detect_themes,
-        THEME_STOCKS, fetch_google_news_by_keyword
-    )
-    from modules.ai_logic import pick_promising_stocks_one_per_theme, make_ai_commentary
-except Exception as e:
-    st.error("모듈 임포트 오류가 발생했습니다. (modules/* 파일/경로/오탈자/의존성 확인)")
-    st.exception(e)
-    st.stop()
-
-st.write("BOOT-2: modules imported")
-
-# ---- 공통 CSS / 퀵메뉴 ----
-inject_base_css()
-render_quick_menu()
-
-# ---- 상단: 티커바 ----
-st.markdown("## 🧠 AI 뉴스리포트 – 실시간 지수 티커바")
-colL, colR = st.columns([1, 5])
-with colL:
-    st.markdown("### 📊 시장 요약")
-with colR:
-    if st.button("🔄 새로고침", key="refresh"):
-        st.cache_data.clear()
-        st.rerun()
-
-try:
-    ticker_items = build_ticker_items()
-    render_ticker_line(ticker_items, speed_sec=30)
-except Exception as e:
-    st.error("티커바 렌더 중 오류")
-    st.exception(e)
-
-st.divider()
-
-# ---- 최신 뉴스(제목+일시만, 컴팩트) ----
-st.markdown("<a id='sec-news'></a>", unsafe_allow_html=True)
-st.markdown("## 📰 최신 뉴스 요약")
-
-import datetime as _dt
-from zoneinfo import ZoneInfo as _ZI
-KST = _ZI("Asia/Seoul")
-now_str = _dt.datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S (KST)")
-st.caption(f"업데이트: {now_str}")
-
-c1, c2 = st.columns([2, 1])
-with c1:
-    cat = st.selectbox("📂 카테고리", list(CATEGORIES.keys()), key="news_cat")
-with c2:
-    page = st.number_input("페이지", min_value=1, value=1, step=1, key="news_page")
-
-try:
-    all_news = fetch_category_news(cat, days=3, max_items=100)
-    page_size = 10
-    s = (page - 1) * page_size
-    e = s + page_size
-    news_page = all_news[s:e]
-
-    if not news_page:
-        st.info("표시할 뉴스가 없습니다. (최근 3일 내 결과 없음)")
-    else:
-        for n in news_page:
-            t = n.get("title", "").strip() or "(제목 없음)"
-            when = n.get("time", "-")
-            link = n.get("link", "")
-            st.markdown(
-                f"<div class='news-item'><a href='{link}' target='_blank'>{t}</a>"
-                f"<span class='news-time'>{when}</span></div>",
-                unsafe_allow_html=True,
-            )
-    st.caption(f"최근 3일 뉴스 총 {len(all_news)}건 · {s+1}–{min(e, len(all_news))} 표시")
-except Exception as e:
-    st.error("뉴스 섹션 오류")
-    st.exception(e)
-
-st.divider()
-
-# ---- 뉴스 기반 테마 요약 ----
-st.markdown("<a id='sec-themes'></a>", unsafe_allow_html=True)
-st.markdown("## 🔥 뉴스 기반 테마 요약")
-
 import pandas as pd
-try:
-    # 모든 카테고리 합산
-    merged = []
-    for _k in CATEGORIES.keys():
-        merged.extend(fetch_category_news(_k, days=3, max_items=100))
 
-    theme_rows = detect_themes(merged)  # [{theme,count,avg_delta,leaders,rep_stocks,sample_link}]
-    if not theme_rows:
-        st.info("테마 신호 없음.")
-    else:
-        # 테이블 (샘플링크는 클릭 가능하게)
-        df = pd.DataFrame(theme_rows)
-        if "sample_link" in df.columns:
-            df["sample_link"] = df["sample_link"].fillna("").apply(
-                lambda u: f"[링크]({u})" if u else "-"
-            )
-        st.dataframe(df, use_container_width=True, hide_index=True)
-except Exception as e:
-    st.error("테마 요약 섹션 오류")
-    st.exception(e)
+from modules.style import inject_base_css, render_quick_menu
+from modules.market import build_ticker_items
+from modules.market import fmt_number, fmt_percent   # 재사용
+from modules.news import (
+    CATEGORIES, THEME_STOCKS, fetch_category_news, fetch_all_news, detect_themes
+)
+from modules.ai_logic import (
+    extract_keywords, summarize_sentences,
+    make_theme_report, pick_promising_by_theme_once
+)
+
+KST = ZoneInfo("Asia/Seoul")
+st.set_page_config(page_title="AI 뉴스리포트 – 자동 테마·시세 예측", layout="wide")
+
+# ---- CSS / Quick menu ----
+st.markdown(inject_base_css(), unsafe_allow_html=True)
+st.markdown(render_quick_menu(), unsafe_allow_html=True)
+st.markdown("<div class='compact'>", unsafe_allow_html=True)
+
+# =========================
+# 0) 헤더 & 리프레시
+# =========================
+c1, c2 = st.columns([5,1])
+with c1:
+    st.markdown("<h2 id='sec-ticker'>🧠 AI 뉴스리포트 – 실시간 지수 티커바</h2>", unsafe_allow_html=True)
+    st.caption(f"업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}")
+with c2:
+    if st.button("🔄 새로고침", use_container_width=True):
+        st.cache_data.clear(); st.rerun()
+
+# =========================
+# 1) 티커바
+# =========================
+items = build_ticker_items()
+chips = []
+for it in items:
+    arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•")
+    cls = "up" if it["is_up"] else ("down" if it["is_down"] else "")
+    chips.append(f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>")
+line = '<span class="sep">|</span>'.join(chips)
+st.markdown(f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True)
+st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기준)")
 
 st.divider()
 
-# ---- 유망 종목 Top5 (테마당 1종목) ----
-st.markdown("<a id='sec-top5'></a>", unsafe_allow_html=True)
-st.markdown("## 🚀 오늘의 AI 유망 종목 Top5 (테마당 1종목)")
+# =========================
+# 2) 최신 뉴스 (제목+시간, 컴팩트)
+# =========================
+st.markdown("<h2 id='sec-news'>📰 최신 뉴스 요약</h2>", unsafe_allow_html=True)
+col1, col2 = st.columns([2,1])
+with col1:
+    cat = st.selectbox("📂 카테고리", list(CATEGORIES.keys()))
+with col2:
+    page = st.number_input("페이지", min_value=1, value=1, step=1)
 
-try:
-    recommend_df = pick_promising_stocks_one_per_theme(theme_rows, top_n=5)
-    if recommend_df.empty:
-        st.info("추천할 종목이 없습니다. (데이터 부족)")
-    else:
-        st.dataframe(recommend_df, use_container_width=True, hide_index=True)
-        st.markdown("### 🧾 AI 종합 판단")
-        st.markdown(make_ai_commentary(recommend_df), unsafe_allow_html=True)
-except Exception as e:
-    st.error("유망 종목 추천 섹션 오류")
-    st.exception(e)
+news_all = fetch_category_news(cat, days=3, max_items=100)
+page_size = 10
+start, end = (page-1)*page_size, (page)*page_size
+for i, n in enumerate(news_all[start:end], start=start+1):
+    st.markdown(
+        f"<div class='news-row'><b>{i}. <a href='{n['link']}' target='_blank'>{n['title']}</a></b>"
+        f"<div class='news-meta'>{n['time']}</div></div>",
+        unsafe_allow_html=True
+    )
+st.caption(f"최근 3일 · {cat} · {len(news_all)}건 중 {start+1}-{min(end,len(news_all))}")
 
-st.caption("※ 본 리포트는 공개 데이터를 기반으로 자동 생성된 참고 자료입니다.")
-st.write("BOOT-3: render done")
+st.divider()
+
+# =========================
+# 3) 뉴스 기반 테마
+# =========================
+st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True)
+all_news = fetch_all_news(days=3, per_cat=100)
+theme_rows = detect_themes(all_news)
+
+if not theme_rows:
+    st.info("테마 신호가 약합니다.")
+else:
+    # 배지 + 테이블
+    top5 = theme_rows[:5]
+    st.markdown(" ".join([f"<span class='chip'>{r['theme']} {r['count']}건</span>" for r in top5]), unsafe_allow_html=True)
+
+    df_theme = pd.DataFrame(theme_rows)
+    if "sample_link" in df_theme.columns:
+        # 링크 클릭 가능하게 렌더링
+        df_theme["sample_link"] = df_theme["sample_link"].apply(lambda u: f"[바로가기]({u})" if u else "-")
+    st.dataframe(df_theme, use_container_width=True, hide_index=True)
+
+    # 대표 종목 간단 시세(색/아이콘)
+    st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
+    from modules.market import fetch_quote
+    def _repr_price(ticker):
+        last, prev, _ = fetch_quote(ticker)
+        if not last or not prev:
+            return "-", "-", "gray"
+        delta = (last - prev)/prev*100.0
+        color = "red" if delta > 0 else ("blue" if delta < 0 else "gray")
+        arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "■")
+        return fmt_number(last,0), f"{arrow} {fmt_percent(delta)}", color
+
+    for tr in top5:
+        theme = tr["theme"]
+        st.write(f"**{theme}**")
+        cols = st.columns(min(4, len(THEME_STOCKS.get(theme, [])) or 1))
+        for col, (name, ticker) in zip(cols, THEME_STOCKS.get(theme, [])[:4]):
+            with col:
+                px, chg, color = _repr_price(ticker)
+                st.markdown(f"<b>{name}</b><br><span style='color:{color}'>{px} {chg}</span><br><small>{ticker}</small>", unsafe_allow_html=True)
+        st.markdown("<hr/>", unsafe_allow_html=True)
+
+st.divider()
+
+# =========================
+# 4) AI 유망 종목 Top5 (테마다 1종목)
+# =========================
+st.markdown("<h2 id='sec-top5'>🚀 오늘의 AI 유망 종목 Top5 (테마다 1종목)</h2>", unsafe_allow_html=True)
+rec_df = pick_promising_by_theme_once(theme_rows, THEME_STOCKS, top_n=5) if theme_rows else pd.DataFrame()
+if rec_df.empty:
+    st.info("추천할 종목이 없습니다. (유동성/이상치 필터로 제외됐을 수 있어요)")
+else:
+    st.dataframe(rec_df, use_container_width=True, hide_index=True)
+
+st.markdown("<h3 id='sec-judge'>🧾 AI 종합 판단</h3>", unsafe_allow_html=True)
+if not rec_df.empty:
+    for _, r in rec_df.iterrows():
+        arrow = "🔺" if r["등락률(%)"] >= 0 else "🔻"
+        st.markdown(
+            f"- **{r['종목명']} ({r['티커']})** — 테마: *{r['테마']}*, "
+            f"등락률: **{r['등락률(%)']}%** {arrow}, 뉴스빈도: {int(r['뉴스빈도'])}건, "
+            f"AI점수: **{r['AI점수']}**, 거래량: {int(r['거래량']) if r['거래량'] else '-'}"
+        )
+
+st.markdown("</div>", unsafe_allow_html=True)
