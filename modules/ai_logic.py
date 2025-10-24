@@ -1,70 +1,60 @@
-# modules/ai_logic.py
-import numpy as np
+# -*- coding: utf-8 -*-
 import pandas as pd
-import streamlit as st
-import yfinance as yf
-
-from .market import fetch_quote, fmt_percent, fmt_number
 from .news import THEME_STOCKS
+from .market import fetch_quote
 
-def summarize_news_titles(news_list, topn=5):
-    """아주 간단 요약: 제목에서 상위 n개 문장"""
-    titles = [n.get("title","") for n in news_list if n.get("title")]
-    if not titles: return []
-    joined = " ".join(titles)
-    sents = [s.strip() for s in joined.split(".") if len(s.strip())>15]
-    return sents[:topn]
-
-def calc_theme_strength(news_count, avg_delta):
-    """테마강도(1~5): 뉴스빈도(60%) + 평균등락(40%)"""
-    freq_score  = min(news_count/20, 1.0)
-    price_score = min(max((avg_delta + 5)/10, 0), 1.0)
-    total = (freq_score*0.6 + price_score*0.4) * 5
-    return round(total, 1)
-
-def calc_risk_level(avg_delta):
-    if avg_delta >= 3: return 1
-    if avg_delta >= 1: return 2
-    if avg_delta >= -1: return 3
-    if avg_delta >= -3: return 4
-    return 5
-
-def pick_promising_stocks(theme_rows, top_n=5):
+def pick_promising_stocks_one_per_theme(theme_rows, top_n=5):
     """
-    테마 강도 + 개별 등락률을 통한 점수로 상위 종목 선별
-    theme_rows: [{'테마':..., '뉴스건수':...}, ...]
+    상위 테마에서 테마당 1종목씩 선발하여 TopN 구성.
+    스코어 = 테마 뉴스빈도 30% + 개별 등락률 70%
     """
-    cands=[]
-    for tr in theme_rows[:8]:
+    if not theme_rows:
+        return pd.DataFrame()
+
+    candidates = []
+    for tr in theme_rows[:max(5, top_n * 2)]:  # 상위 테마 충분히 보기
         theme = tr["테마"]
-        news_count = tr["뉴스건수"]
+        count = tr["뉴스건수"]
+        picked = None
+        best_score = -1e9
+
         for name, ticker in THEME_STOCKS.get(theme, []):
             try:
                 last, prev = fetch_quote(ticker)
                 if not last or not prev: 
                     continue
-                delta = (last - prev) / prev * 100
-                score = news_count*0.3 + delta*0.7
-                cands.append({
-                    "테마": theme, "종목명": name, "티커": ticker,
-                    "등락률(%)": round(delta,2), "뉴스빈도": news_count,
-                    "AI점수": round(score,2)
-                })
+                delta = (last - prev) / prev * 100.0
+                score = count * 0.3 + delta * 0.7
+                if score > best_score:
+                    best_score = score
+                    picked = {
+                        "테마": theme,
+                        "종목명": name,
+                        "티커": ticker,
+                        "등락률(%)": round(delta, 2),
+                        "뉴스빈도": count,
+                        "AI점수": round(score, 2),
+                    }
             except Exception:
                 continue
-    df = pd.DataFrame(cands)
-    if df.empty: return df
-    return df.sort_values("AI점수", ascending=False).head(top_n)
 
-def theme_price_snapshot(theme):
-    """테마 내 종목들의 현재가/변동률 스냅샷"""
-    rows=[]
-    for name, ticker in THEME_STOCKS.get(theme, []):
-        try:
-            last, prev = fetch_quote(ticker)
-            if last and prev:
-                delta = (last - prev)/prev*100
-                rows.append({"종목":name,"티커":ticker,"현재가":fmt_number(last,0),"등락률":fmt_percent(delta)})
-        except Exception:
-            pass
-    return rows
+        if picked:
+            candidates.append(picked)
+
+    if not candidates:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(candidates).sort_values(by="AI점수", ascending=False).drop_duplicates(subset=["테마"])
+    return df.head(top_n).reset_index(drop=True)
+
+def make_ai_commentary(df: pd.DataFrame) -> str:
+    if df is None or df.empty:
+        return "<em>추천 결과가 없습니다.</em>"
+    lines = []
+    for _, r in df.iterrows():
+        arrow = "🔺" if float(r["등락률(%)"]) >= 0 else "🔻"
+        lines.append(
+            f"- <b>{r['종목명']} ({r['티커']})</b> — 테마: <em>{r['테마']}</em>, "
+            f"등락률: <b>{r['등락률(%)']}%</b>, 뉴스빈도: {int(r['뉴스빈도'])}건, AI점수: {r['AI점수']} {arrow}"
+        )
+    return "<br>".join(lines)
