@@ -557,3 +557,12 @@ if __name__ == "__main__":
         # 콘솔에서 폴백 렌더 결과 요약
         print("[Fallback] Streamlit not available. Ran main() with FakeStreamlit.")
 
+from modules.ai_logic import save_report_and_picks
+# ...
+if st.button("💾 리포트 & 유망종목 저장", use_container_width=True):
+    try:
+        paths = save_report_and_picks(theme_rows, THEME_STOCKS, out_dir="reports", top_n=5, prefix="dashboard")
+        st.success("저장 완료!")
+        st.json(paths)
+    except Exception as e:
+        st.error(f"저장 실패: {e}")
