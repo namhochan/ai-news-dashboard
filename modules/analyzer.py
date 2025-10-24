@@ -1,16 +1,10 @@
 # -*- coding: utf-8 -*-
-# modules/analyzer.py
-# 간단 종목 분석 & 기록 (yfinance 없으면 요약만 반환)
-# v3.7.1+R
-
 from __future__ import annotations
 import os, json, sqlite3
 from datetime import datetime, timezone, timedelta
-from typing import Tuple, Dict, Any, List
-
+from typing import Tuple, Dict, Any
 import pandas as pd
 
-# yfinance 안전 임포트
 try:
     import yfinance as yf  # type: ignore
     _YF = True
@@ -48,7 +42,6 @@ def _fetch_basic(ticker: str) -> Dict[str, Any]:
             info["last"] = getattr(fi, "last_price", None)
             info["prev"] = getattr(fi, "previous_close", None)
             info["volume"] = getattr(fi, "last_volume", None)
-        # 보수적으로 최근 30일 종가
         hist = t.history(period="30d", interval="1d", auto_adjust=True)
         if hist is not None and not hist.empty:
             info["close_series"] = hist["Close"].dropna().tolist()
@@ -57,11 +50,6 @@ def _fetch_basic(ticker: str) -> Dict[str, Any]:
         return {}
 
 def analyze_stock(name: str, ticker: str) -> Tuple[str, Dict[str, Any]]:
-    """
-    간단 분석:
-    - fast_info/30일 종가 수집
-    - 전일 대비 %, 7일/30일 추세 요약
-    """
     payload = _fetch_basic(ticker)
     last, prev = payload.get("last"), payload.get("prev")
     change_pct = None
@@ -69,30 +57,20 @@ def analyze_stock(name: str, ticker: str) -> Tuple[str, Dict[str, Any]]:
         change_pct = (last - prev) / prev * 100.0
 
     series = payload.get("close_series") or []
-    trend7, trend30 = None, None
-    if len(series) >= 7:
-        trend7 = (series[-1] - series[-7]) / series[-7] * 100.0
-    if len(series) >= 30:
-        trend30 = (series[-1] - series[0]) / series[0] * 100.0
+    trend7 = (series[-1] - series[-7]) / series[-7] * 100.0 if len(series) >= 7 else None
+    trend30 = (series[-1] - series[0]) / series[0] * 100.0 if len(series) >= 30 else None
 
-    summary = f"{name}({ticker})"
     parts = []
-    if change_pct is not None:
-        parts.append(f"전일대비 {change_pct:+.2f}%")
-    if trend7 is not None:
-        parts.append(f"7일 {trend7:+.2f}%")
-    if trend30 is not None:
-        parts.append(f"30일 {trend30:+.2f}%")
-    if not parts:
-        parts.append("데이터 제한으로 간단 요약만 제공합니다.")
-    summary += " · " + ", ".join(parts)
+    if change_pct is not None: parts.append(f"전일대비 {change_pct:+.2f}%")
+    if trend7 is not None: parts.append(f"7일 {trend7:+.2f}%")
+    if trend30 is not None: parts.append(f"30일 {trend30:+.2f}%")
+    if not parts: parts.append("데이터 제한으로 간단 요약만 제공합니다.")
+    summary = f"{name}({ticker}) · " + ", ".join(parts)
 
-    # DB 저장
     rec = {
         "name": name, "ticker": ticker,
         "last": last, "prev": prev,
-        "change_pct": change_pct,
-        "trend7": trend7, "trend30": trend30,
+        "change_pct": change_pct, "trend7": trend7, "trend30": trend30,
     }
     ts = datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
     with sqlite3.connect(DB_PATH) as conn:
@@ -101,7 +79,6 @@ def analyze_stock(name: str, ticker: str) -> Tuple[str, Dict[str, Any]]:
             (ts, name, ticker, summary, json.dumps(rec, ensure_ascii=False))
         )
         conn.commit()
-
     return summary, rec
 
 def load_recent(limit: int = 10) -> pd.DataFrame:
@@ -113,5 +90,4 @@ def load_recent(limit: int = 10) -> pd.DataFrame:
             (int(limit),)
         )
         rows = cur.fetchall()
-    df = pd.DataFrame(rows, columns=["시간", "종목명", "티커", "요약"])
-    return df
+    return pd.DataFrame(rows, columns=["시간", "종목명", "티커", "요약"])
