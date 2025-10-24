@@ -1,13 +1,17 @@
 # -*- coding: utf-8 -*-
 # modules/market.py
-# 안정형 시세 수집 유틸 + 티커바 데이터 (yfinance 미설치/네트워크 차단 대비)
-# v3.7.1+R
+# 안정형 시세 수집 유틸 + 티커바 데이터 (yfinance 차단 시 HTTP 폴백)
+# v3.7.1+HTTP
 
 from __future__ import annotations
 import math
+import time
+import json
+from functools import lru_cache
+from typing import Tuple, Optional
 import numpy as np
 
-# yfinance이 없거나 실패해도 앱이 죽지 않도록 방어
+# ---------- yfinance (있으면 사용, 없으면 패스) ----------
 try:
     import yfinance as yf  # type: ignore
     _YF = True
@@ -15,6 +19,62 @@ except Exception:
     yf = None  # type: ignore
     _YF = False
 
+# ---------- HTTP 폴백: Yahoo Chart API ----------
+import requests
+from urllib.parse import quote
+
+_UA = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0 Safari/537.36"
+)
+
+def _http_json(url: str, timeout: int = 6) -> dict:
+    r = requests.get(url, headers={"User-Agent": _UA}, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
+
+@lru_cache(maxsize=256)
+def _fetch_yahoo_chart_once(symbol: str) -> Tuple[Optional[float], Optional[float], Optional[int]]:
+    """
+    Yahoo chart API로 5일/1일봉 가져와서
+    마지막/이전 종가와 마지막 거래량을 계산
+    """
+    # ^, = 등의 특수문자 URL 인코딩
+    enc = quote(symbol, safe="")
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{enc}?range=5d&interval=1d&includePrePost=false"
+    try:
+        j = _http_json(url)
+        res = j.get("chart", {}).get("result", [])
+        if not res:
+            return None, None, None
+        r0 = res[0]
+        closes = (r0.get("indicators", {}).get("quote", [{}])[0].get("close") or [])
+        vols   = (r0.get("indicators", {}).get("quote", [{}])[0].get("volume") or [])
+        closes = [c for c in closes if isinstance(c, (int, float))]
+        if len(closes) < 2:
+            return None, None, None
+        last = float(closes[-1])
+        prev = float(closes[-2])
+        vol  = None
+        if vols and isinstance(vols[-1], (int, float)):
+            vol = int(vols[-1])
+        return last, prev, vol
+    except Exception:
+        return None, None, None
+
+# 간단 메모리 캐시(짧은 TTL)
+_mem_cache = {}
+def _memo_fetch(symbol: str, ttl: float = 3.0):
+    now = time.time()
+    v = _mem_cache.get(symbol)
+    if v and (now - v[0]) < ttl:
+        return v[1]
+    data = _fetch_yahoo_chart_once(symbol)
+    _mem_cache[symbol] = (now, data)
+    return data
+
+# ---------- 포맷 유틸 ----------
 def fmt_number(v, d: int = 2):
     try:
         if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
@@ -31,44 +91,46 @@ def fmt_percent(v):
     except Exception:
         return "-"
 
+# ---------- 시세 단건 ----------
 def fetch_quote(ticker: str):
     """
-    1) yfinance fast_info → 2) history 폴백
-    yfinance 미가용/예외: (None, None, None)
+    반환: (last, prev, volume)
+    우선순위
+      1) yfinance (가능하면)
+      2) Yahoo Chart HTTP 폴백 (차단 회피)
     """
-    if not _YF:
-        return None, None, None
+    # 1) yfinance (빠르면 이게 가장 정확)
+    if _YF:
+        try:
+            t = yf.Ticker(ticker)
+            fi = getattr(t, "fast_info", None)
+            if fi:
+                last = getattr(fi, "last_price", None)
+                prev = getattr(fi, "previous_close", None)
+                vol  = getattr(fi, "last_volume", None)
+                if last and prev:
+                    return float(last), float(prev), (int(vol) if vol else None)
+        except Exception:
+            pass
+        # history 폴백
+        try:
+            df = yf.Ticker(ticker).history(period="10d", interval="1d", auto_adjust=True)
+            if df is not None and not df.empty:
+                closes = df["Close"].dropna()
+                vols = df.get("Volume")
+                if len(closes) >= 2:
+                    last = float(closes.iloc[-1]); prev = float(closes.iloc[-2])
+                    vol = None
+                    if vols is not None and not np.isnan(vols.iloc[-1]):
+                        vol = int(vols.iloc[-1])
+                    return last, prev, vol
+        except Exception:
+            pass
 
-    # fast_info
-    try:
-        t = yf.Ticker(ticker)
-        fi = getattr(t, "fast_info", None)
-        if fi:
-            last = getattr(fi, "last_price", None)
-            prev = getattr(fi, "previous_close", None)
-            vol  = getattr(fi, "last_volume", None)
-            if last and prev:
-                return float(last), float(prev), (int(vol) if vol else None)
-    except Exception:
-        pass
+    # 2) HTTP 폴백
+    return _memo_fetch(ticker)
 
-    # history 폴백
-    try:
-        df = yf.Ticker(ticker).history(period="10d", interval="1d", auto_adjust=True)
-        if df is None or df.empty:
-            return None, None, None
-        closes = df["Close"].dropna()
-        vols = df.get("Volume")
-        if len(closes) < 2:
-            return None, None, None
-        last = float(closes.iloc[-1]); prev = float(closes.iloc[-2])
-        vol = None
-        if vols is not None:
-            v = vols.iloc[-1]; vol = int(v) if v == v else None
-        return last, prev, vol
-    except Exception:
-        return None, None, None
-
+# ---------- 티커바 ----------
 def build_ticker_items():
     """상단 지수/원자재/환율 티커바 데이터."""
     rows = [
@@ -96,12 +158,11 @@ def build_ticker_items():
         })
     return items
 
-# --- (선택) OHLC + 캔들차트 ---------------------------------
+# --- (선택) OHLC + 캔들차트: yfinance 있을 때만 ---
 import pandas as pd
 import matplotlib.pyplot as plt
 
 def get_ohlc(ticker: str, days: int = 120) -> pd.DataFrame:
-    """yfinance 없으면 빈 DF 반환."""
     if not _YF:
         return pd.DataFrame()
     period_map = 365 if days > 252 else max(30, days + 10)
@@ -120,11 +181,9 @@ def plot_candles(df: pd.DataFrame, title: str = "", lookback: int = 60):
         ax.text(0.5, 0.5, "차트 데이터 없음", ha="center", va="center")
         ax.axis("off")
         return fig
-
     data = df.tail(max(20, lookback)).copy()
     x = np.arange(len(data))
     o, h, l, c = data["Open"].values, data["High"].values, data["Low"].values, data["Close"].values
-
     fig, ax = plt.subplots(figsize=(8, 3))
     width = 0.6
     for i in range(len(data)):
