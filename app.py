@@ -344,6 +344,125 @@ def main(streamlit_module):
     st.caption(f"최근 3일 · {cat} · {len(news_all)}건 중 {start+1}-{min(end,len(news_all))}")
 
     st.divider()
+# =========================
+# 3) 뉴스 기반 테마 + 자동 키워드 추천
+# =========================
+st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True)
+st.caption("뉴스 본문/제목에서 키워드를 추출하고, 자동 테마 감지→추천까지 한번에 구성합니다.")
+
+# 캐시 래퍼
+try:
+    @st.cache_data(ttl=300)  # type: ignore[misc]
+    def _fetch_all_news_cached(_days: int, _per_cat: int):
+        return fetch_all_news(days=_days, per_cat=_per_cat)
+    @st.cache_data(ttl=120)  # type: ignore[misc]
+    def _detect_themes_cached(_news):
+        return detect_themes(_news)
+except Exception:
+    def _fetch_all_news_cached(_days: int, _per_cat: int):
+        return fetch_all_news(days=_days, per_cat=_per_cat)
+    def _detect_themes_cached(_news):
+        return detect_themes(_news)
+
+# 뉴스 수집 & 테마 감지
+try:
+    all_news = _fetch_all_news_cached(3, 100)
+    theme_rows = _detect_themes_cached(all_news) or []
+except Exception as e:
+    st.error(f"테마 분석 중 오류: {e}")
+    theme_rows = []
+
+# ---- 자동 키워드 추천 (뉴스 제목 기반) ----
+try:
+    titles_for_kw = [n.get("title", "") for n in (all_news or [])]
+    auto_keywords = extract_keywords(titles_for_kw, topn=15) if titles_for_kw else []
+except Exception:
+    auto_keywords = []
+
+if auto_keywords:
+    st.markdown("**🧩 자동 키워드(Top 15)**: " + " ".join([f"<span class='chip'>{k}</span>" for k in auto_keywords]), unsafe_allow_html=True)
+
+# 테마 표시
+if not theme_rows:
+    st.info("테마 신호가 약합니다.")
+else:
+    # 배지 + 테이블
+    top5 = theme_rows[:5]
+    st.markdown(" ".join([f"<span class='chip'>{r['theme']} {r['count']}건</span>" for r in top5]), unsafe_allow_html=True)
+
+    df_theme = pd.DataFrame(theme_rows)
+    column_config = {}
+    if "sample_link" in df_theme.columns:
+        try:
+            column_config["sample_link"] = st.column_config.LinkColumn(label="링크", display_text="바로가기")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+    st.dataframe(df_theme, use_container_width=True, hide_index=True, column_config=column_config or None)
+
+    # 대표 종목 간단 시세(색/아이콘)
+    st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
+    def _repr_price(ticker: str):
+        try:
+            last, prev, _ = fetch_quote(ticker)
+            if last is None or prev in (None, 0):
+                return "-", "-", "gray"
+            delta = (last - prev) / prev * 100.0
+            color = "red" if delta > 0 else ("blue" if delta < 0 else "gray")
+            arrow = "▲" if delta > 0 else ("▼" if delta < 0 else "■")
+            return fmt_number(last, 0), f"{arrow} {fmt_percent(delta)}", color
+        except Exception:
+            return "-", "-", "gray"
+
+    for tr in top5:
+        theme = tr.get("theme", "-")
+        stocks = THEME_STOCKS.get(theme, []) or []
+        if not stocks:
+            continue
+        st.write(f"**{theme}**")
+        cols = st.columns(min(4, max(1, len(stocks))))
+        for col, (name, ticker) in zip(cols, stocks[:4]):
+            with col:
+                px, chg, color = _repr_price(ticker)
+                st.markdown(f"<b>{name}</b><br><span style='color:{color}'>{px} {chg}</span><br><small>{ticker}</small>", unsafe_allow_html=True)
+        st.markdown("<hr/>", unsafe_allow_html=True)
+
+st.divider()
+
+# =========================
+# 4) AI 유망 종목 Top5 (테마다 1종목)
+# =========================
+st.markdown("<h2 id='sec-top5'>🚀 오늘의 AI 유망 종목 Top5 (테마다 1종목)</h2>", unsafe_allow_html=True)
+try:
+    @st.cache_data(ttl=120)  # type: ignore[misc]
+    def _pick_promising_once(_theme_rows, _theme_stocks, _top_n):
+        return pick_promising_by_theme_once(_theme_rows, _theme_stocks, top_n=_top_n)
+except Exception:
+    def _pick_promising_once(_theme_rows, _theme_stocks, _top_n):
+        return pick_promising_by_theme_once(_theme_rows, _theme_stocks, top_n=_top_n)
+
+rec_df = _pick_promising_once(theme_rows, THEME_STOCKS, 5) if theme_rows else pd.DataFrame()
+if rec_df is None or rec_df.empty:
+    st.info("추천할 종목이 없습니다. (유동성/이상치 필터로 제외됐을 수 있어요)")
+else:
+    st.dataframe(rec_df, use_container_width=True, hide_index=True)
+
+# =========================
+# 5) 원클릭 자동 분석·추천·저장
+# =========================
+col_auto1, col_auto2 = st.columns([1,1])
+with col_auto1:
+    if st.button("🪄 한번에 분석+추천+저장", use_container_width=True):
+        if not theme_rows:
+            st.warning("테마 신호가 약해 저장을 건너뜁니다.")
+        else:
+            try:
+                st.success("분석 및 추천 완료! 아래에 저장된 파일 경로가 표시됩니다.")
+                paths = save_report_and_picks(theme_rows, THEME_STOCKS, out_dir="reports", top_n=5, prefix="oneclick")
+                st.json(paths)
+            except Exception as e:
+                st.error(f"원클릭 처리 실패: {e}")
+with col_auto2:
+    st.caption("※ 뉴스→테마 감지→유망종목 추천→CSV/JSON 저장까지 한 번에 실행")
 
     # =========================
     # 3) 뉴스 기반 테마
