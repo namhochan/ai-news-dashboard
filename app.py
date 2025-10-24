@@ -4,11 +4,11 @@ app.py - dashboard main (safe for Streamlit / no tzdata dependency)
 
 v3.7.1+R
 
-from future import annotations from datetime import datetime, timezone, timedelta import os import pandas as pd import streamlit as st
+from future import annotations from datetime import datetime, timezone, timedelta import os import json import pandas as pd import streamlit as st
 
 ---- internal modules ----
 
-from modules.style import inject_base_css, render_quick_menu from modules.market import build_ticker_items, fmt_number, fmt_percent, fetch_quote from modules.news import ( CATEGORIES, THEME_STOCKS, fetch_category_news, fetch_all_news, detect_themes, ) from modules.ai_logic import ( extract_keywords, summarize_sentences, make_theme_report, pick_promising_by_theme_once, save_report_and_picks, ) from modules.analyzer import init_db, analyze_stock, load_recent
+from modules.style import inject_base_css, render_quick_menu from modules.market import build_ticker_items, fmt_number, fmt_percent, fetch_quote from modules.news import ( CATEGORIES, THEME_STOCKS, fetch_category_news, fetch_all_news, detect_themes, ) from modules.ai_logic import ( extract_keywords, summarize_sentences, make_theme_report, pick_promising_by_theme_once, ) from modules.analyzer import init_db, analyze_stock, load_recent
 
 fixed KST (UTC+9) - no ZoneInfo/tzdata needed
 
@@ -25,6 +25,24 @@ st.set_page_config(page_title="AI 뉴스리포트 - 자동 테마·시세 예측
 session state
 
 if "autosaved_once" not in st.session_state: st.session_state["autosaved_once"] = False
+
+------------------------------------------------------
+
+fallback: save_report_and_picks (if not provided in ai_logic)
+
+------------------------------------------------------
+
+try: from modules.ai_logic import save_report_and_picks  # type: ignore except Exception: def save_report_and_picks(theme_rows, theme_stocks, out_dir="reports", top_n=5, prefix="export"): os.makedirs(out_dir, exist_ok=True) ts = datetime.now(KST).strftime("%Y%m%d_%H%M%S") report_csv = os.path.join(out_dir, f"{prefix}theme_report{ts}.csv") report_json = os.path.join(out_dir, f"{prefix}theme_report{ts}.json") pd.DataFrame(theme_rows).to_csv(report_csv, index=False, encoding="utf-8") with open(report_json, "w", encoding="utf-8") as f: json.dump(theme_rows, f, ensure_ascii=False) picks_df = pick_promising_by_theme_once(theme_rows, theme_stocks, top_n=top_n) picks_csv = os.path.join(out_dir, f"{prefix}promising_picks{ts}.csv") picks_json = os.path.join(out_dir, f"{prefix}promising_picks{ts}.json") if not picks_df.empty: picks_df.to_csv(picks_csv, index=False, encoding="utf-8") with open(picks_json, "w", encoding="utf-8") as f: json.dump(picks_df.to_dict(orient="records"), f, ensure_ascii=False) else: open(picks_csv, "a", encoding="utf-8").close() open(picks_json, "a", encoding="utf-8").close() return { "report_csv": report_csv, "report_json": report_json, "picks_csv": picks_csv, "picks_json": picks_json, }
+
+------------------------------------------------------
+
+cached safe wrappers for news fetch
+
+------------------------------------------------------
+
+@st.cache_data(ttl=600) def _safe_fetch_category_news(cat, days=3, max_items=100): try: return fetch_category_news(cat, days=days, max_items=max_items) except Exception: return []
+
+@st.cache_data(ttl=600) def _safe_fetch_all_news(days=3, per_cat=100): try: return fetch_all_news(days=days, per_cat=per_cat) except Exception: return []
 
 ------------------------------------------------------
 
@@ -52,7 +70,7 @@ st.divider()
 
 st.markdown("<h2 id='sec-news'>📰 최신 뉴스 요약</h2>", unsafe_allow_html=True) col1, col2 = st.columns([2, 1]) with col1: cat = st.selectbox("📂 카테고리", list(CATEGORIES.keys())) with col2: page = st.number_input("페이지", min_value=1, value=1, step=1)
 
-try: news_all = fetch_category_news(cat, days=3, max_items=100) except Exception: news_all = []
+news_all = _safe_fetch_category_news(cat, days=3, max_items=100)
 
 page_size = 10 start, end = (page - 1) * page_size, (page) * page_size for i, n in enumerate(news_all[start:end], start=start + 1): title = n.get("title", "-") link = n.get("link", "#") when = n.get("time", "-") st.markdown( f"<div class='news-row'><b>{i}. <a href='{link}' target='_blank' rel='noreferrer noopener'>{title}</a></b>" f"<div class='news-meta'>{when}</div></div>", unsafe_allow_html=True, ) st.caption(f"최근 3일 · {cat} · {len(news_all)}건 중 {start+1}-{min(end, len(news_all))}")
 
@@ -64,7 +82,7 @@ st.divider()
 
 ------------------------------------------------------
 
-st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True) try: all_news = fetch_all_news(days=3, per_cat=100) except Exception: all_news = []
+st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True) all_news = _safe_fetch_all_news(days=3, per_cat=100)
 
 theme_rows = detect_themes(all_news)
 
