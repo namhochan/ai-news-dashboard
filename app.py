@@ -58,7 +58,7 @@ c1, c2 = st.columns([5, 1]) with c1: st.markdown("<h2 id='sec-ticker'>🧠 AI �
 
 ------------------------------------------------------
 
-items = build_ticker_items() chips: List[str] = []  # type: ignore[name-defined] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기반, 폴백 가능)")
+items = build_ticker_items() chips = [] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기반, 폴백 가능)")
 
 st.divider()
 
