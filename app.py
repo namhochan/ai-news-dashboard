@@ -46,25 +46,25 @@ cached safe wrappers for news fetch
 
 ------------------------------------------------------
 
-0) header & refresh
+0 - header and refresh
 
 ------------------------------------------------------
 
-c1, c2 = st.columns([5, 1]) with c1: st.markdown("<h2 id='sec-ticker'>🧠 AI 뉴스리포트 - 실시간 지수 티커바</h2>", unsafe_allow_html=True) st.caption(f"업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}") with c2: if st.button("🔄 새로고침", use_container_width=True): st.cache_data.clear(); st.rerun()
+c1, c2 = st.columns([5, 1]) with c1: st.markdown("<h2 id='sec-ticker'>🧠 AI 뉴스리포트 - 실시간 지수 티커바</h2>", unsafe_allow_html=True) st.caption(datetime.now(KST).strftime("업데이트: %Y-%m-%d %H:%M:%S (KST)")) with c2: if st.button("🔄 새로고침", use_container_width=True): st.cache_data.clear(); st.rerun()
 
 ------------------------------------------------------
 
-1) ticker bar
+1 - ticker bar
 
 ------------------------------------------------------
 
-items = build_ticker_items() chips = [] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기반, 폴백 가능)")
+items = build_ticker_items() chips: List[str] = []  # type: ignore[name-defined] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기반, 폴백 가능)")
 
 st.divider()
 
 ------------------------------------------------------
 
-2) latest news (compact)
+2 - latest news (compact)
 
 ------------------------------------------------------
 
@@ -72,13 +72,13 @@ st.markdown("<h2 id='sec-news'>📰 최신 뉴스 요약</h2>", unsafe_allow_htm
 
 news_all = _safe_fetch_category_news(cat, days=3, max_items=100)
 
-page_size = 10 start, end = (page - 1) * page_size, (page) * page_size for i, n in enumerate(news_all[start:end], start=start + 1): title = n.get("title", "-") link = n.get("link", "#") when = n.get("time", "-") st.markdown( f"<div class='news-row'><b>{i}. <a href='{link}' target='_blank' rel='noreferrer noopener'>{title}</a></b>" f"<div class='news-meta'>{when}</div></div>", unsafe_allow_html=True, ) st.caption(f"최근 3일 · {cat} · {len(news_all)}건 중 {start+1}-{min(end, len(news_all))}")
+page_size = 10 start, end = (page - 1) * page_size, page * page_size for i, n in enumerate(news_all[start:end], start=start + 1): title = n.get("title", "-") link = n.get("link", "#") when = n.get("time", "-") st.markdown( f"<div class='news-row'><b>{i}. <a href='{link}' target='_blank' rel='noreferrer noopener'>{title}</a></b>" f"<div class='news-meta'>{when}</div></div>", unsafe_allow_html=True, ) st.caption(f"최근 3일 · {cat} · {len(news_all)}건 중 {start+1}-{min(end, len(news_all))}")
 
 st.divider()
 
 ------------------------------------------------------
 
-3) themes from news
+3 - themes from news
 
 ------------------------------------------------------
 
@@ -122,7 +122,7 @@ st.divider()
 
 ------------------------------------------------------
 
-4) top5 picks (one per theme)
+4 - top5 picks (one per theme)
 
 ------------------------------------------------------
 
@@ -134,7 +134,7 @@ st.divider()
 
 ------------------------------------------------------
 
-5) save (one-click/manual/auto) + download buttons
+5 - save (one-click/manual/auto) + download buttons
 
 ------------------------------------------------------
 
@@ -154,7 +154,7 @@ st.divider()
 
 ------------------------------------------------------
 
-6) stock analyze & history
+6 - stock analyze and history
 
 ------------------------------------------------------
 
@@ -170,7 +170,7 @@ st.markdown("### 📁 최근 분석 기록") hist = load_recent(limit=10) if his
 
 ------------------------------------------------------
 
-7) saved files explorer + debug (optional)
+7 - saved files explorer and debug (optional)
 
 ------------------------------------------------------
 
