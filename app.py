@@ -1,50 +1,52 @@
-app.py – 대시보드 본체 (모듈 분리, 스트림릿/외부의존 방어)
+-- coding: utf-8 --
+
+app.py - dashboard main (safe for Streamlit / no tzdata dependency)
 
 v3.7.1+R
 
-from future import annotations from datetime import datetime, timezone, timedelta import os import io import pandas as pd import streamlit as st
+from future import annotations from datetime import datetime, timezone, timedelta import os import pandas as pd import streamlit as st
 
----- 내부 모듈 ----
+---- internal modules ----
 
-from modules.style import inject_base_css, render_quick_menu from modules.market import build_ticker_items, fmt_number, fmt_percent, fetch_quote from modules.news import ( CATEGORIES, THEME_STOCKS, fetch_category_news, fetch_all_news, detect_themes ) from modules.ai_logic import ( extract_keywords, summarize_sentences, make_theme_report, pick_promising_by_theme_once, # v3.7.1+3에 포함 save_report_and_picks, ) from modules.analyzer import init_db, analyze_stock, load_recent
+from modules.style import inject_base_css, render_quick_menu from modules.market import build_ticker_items, fmt_number, fmt_percent, fetch_quote from modules.news import ( CATEGORIES, THEME_STOCKS, fetch_category_news, fetch_all_news, detect_themes, ) from modules.ai_logic import ( extract_keywords, summarize_sentences, make_theme_report, pick_promising_by_theme_once, save_report_and_picks, ) from modules.analyzer import init_db, analyze_stock, load_recent
 
-안전한 KST(UTC+9) – tzdata/ZoneInfo 없이 동작
+fixed KST (UTC+9) - no ZoneInfo/tzdata needed
 
 KST = timezone(timedelta(hours=9))
 
 ------------------------------------------------------
 
-전역 설정
+page setup
 
 ------------------------------------------------------
 
-st.set_page_config(page_title="AI 뉴스리포트 – 자동 테마·시세 예측", layout="wide") st.markdown(inject_base_css(), unsafe_allow_html=True) st.markdown(render_quick_menu(), unsafe_allow_html=True) st.markdown("<div class='compact'>", unsafe_allow_html=True)
+st.set_page_config(page_title="AI 뉴스리포트 - 자동 테마·시세 예측", layout="wide") st.markdown(inject_base_css(), unsafe_allow_html=True) st.markdown(render_quick_menu(), unsafe_allow_html=True) st.markdown("<div class='compact'>", unsafe_allow_html=True)
 
-세션 상태 준비
+session state
 
 if "autosaved_once" not in st.session_state: st.session_state["autosaved_once"] = False
 
 ------------------------------------------------------
 
-0) 헤더 & 리프레시
+0) header & refresh
 
 ------------------------------------------------------
 
-c1, c2 = st.columns([5, 1]) with c1: st.markdown("<h2 id='sec-ticker'>🧠 AI 뉴스리포트 – 실시간 지수 티커바</h2>", unsafe_allow_html=True) st.caption(f"업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}") with c2: if st.button("🔄 새로고침", use_container_width=True): st.cache_data.clear(); st.rerun()
+c1, c2 = st.columns([5, 1]) with c1: st.markdown("<h2 id='sec-ticker'>🧠 AI 뉴스리포트 - 실시간 지수 티커바</h2>", unsafe_allow_html=True) st.caption(f"업데이트: {datetime.now(KST).strftime('%Y-%m-%d %H:%M:%S (KST)')}") with c2: if st.button("🔄 새로고침", use_container_width=True): st.cache_data.clear(); st.rerun()
 
 ------------------------------------------------------
 
-1) 티커바
+1) ticker bar
 
 ------------------------------------------------------
 
-items = build_ticker_items() chips = [] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기준, 폴백 가능)")
+items = build_ticker_items() chips = [] for it in items: arrow = "▲" if it["is_up"] else ("▼" if it["is_down"] else "•") cls = "up" if it["is_up"] else ("down" if it["is_down"] else "") chips.append( f"<span class='badge'><span class='name'>{it['name']}</span>{it['last']} <span class='{cls}'>{arrow} {it['pct']}</span></span>" ) line = '<span class="sep">|</span>'.join(chips) st.markdown( f"<div class='ticker-wrap'><div class='ticker-track'>{line}<span class='sep'>|</span>{line}</div></div>", unsafe_allow_html=True, ) st.caption("※ 상승=빨강, 하락=파랑 · 데이터: Yahoo Finance (Adj Close 기반, 폴백 가능)")
 
 st.divider()
 
 ------------------------------------------------------
 
-2) 최신 뉴스 (제목+시간, 컴팩트)
+2) latest news (compact)
 
 ------------------------------------------------------
 
@@ -58,22 +60,21 @@ st.divider()
 
 ------------------------------------------------------
 
-3) 뉴스 기반 테마
+3) themes from news
 
 ------------------------------------------------------
 
-st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True) all_news = [] try: all_news = fetch_all_news(days=3, per_cat=100) except Exception: all_news = []
+st.markdown("<h2 id='sec-themes'>🔥 뉴스 기반 테마 요약</h2>", unsafe_allow_html=True) try: all_news = fetch_all_news(days=3, per_cat=100) except Exception: all_news = []
 
 theme_rows = detect_themes(all_news)
 
-if not theme_rows: st.info("테마 신호가 약합니다. (네트워크 차단/빈 데이터일 수 있어요)") else: # 배지 + 테이블 top5 = theme_rows[:5] st.markdown( " ".join([f"<span class='chip'>{r['theme']} {r['count']}건</span>" for r in top5]), unsafe_allow_html=True, )
+if not theme_rows: st.info("테마 신호가 약합니다. (네트워크 차단/빈 데이터일 수 있어요)") else: top5 = theme_rows[:5] st.markdown( " ".join([f"<span class='chip'>{r['theme']} {r['count']}건</span>" for r in top5]), unsafe_allow_html=True, )
 
 df_theme = pd.DataFrame(theme_rows)
 if "sample_link" in df_theme.columns:
     df_theme["sample_link"] = df_theme["sample_link"].apply(lambda u: f"[바로가기]({u})" if u else "-")
 st.dataframe(df_theme, use_container_width=True, hide_index=True)
 
-# 대표 종목 간단 시세(색/아이콘)
 st.markdown("### 🧩 대표 종목 시세 (상승=빨강 / 하락=파랑)")
 
 def _repr_price(ticker: str):
@@ -103,31 +104,31 @@ st.divider()
 
 ------------------------------------------------------
 
-4) AI 유망 종목 Top5 (테마다 1종목)
+4) top5 picks (one per theme)
 
 ------------------------------------------------------
 
 st.markdown("<h2 id='sec-top5'>🚀 오늘의 AI 유망 종목 Top5 (테마다 1종목)</h2>", unsafe_allow_html=True) rec_df = pick_promising_by_theme_once(theme_rows, THEME_STOCKS, top_n=5) if theme_rows else pd.DataFrame() if rec_df.empty: st.info("추천할 종목이 없습니다. (유동성/이상치 필터로 제외됐을 수 있어요)") else: st.dataframe(rec_df, use_container_width=True, hide_index=True)
 
-st.markdown("<h3 id='sec-judge'>🧾 AI 종합 판단</h3>", unsafe_allow_html=True) if not rec_df.empty: for _, r in rec_df.iterrows(): arrow = "🔺" if float(r.get("등락률(%)", 0)) >= 0 else "🔻" st.markdown( f"- {r.get('종목명')} ({r.get('티커')}) — 테마: {r.get('테마')}, " f"등락률: {r.get('등락률(%)')}% {arrow}, 뉴스빈도: {int(r.get('뉴스빈도', 0))}건, " f"AI점수: {r.get('AI점수')}, 거래량: {int(r.get('거래량')) if r.get('거래량') else '-'}" )
+st.markdown("<h3 id='sec-judge'>🧾 AI 종합 판단</h3>", unsafe_allow_html=True) if not rec_df.empty: for _, r in rec_df.iterrows(): try: pct = float(r.get("등락률(%)", 0)) except Exception: pct = 0.0 arrow = "🔺" if pct >= 0 else "🔻" st.markdown( f"- {r.get('종목명')} ({r.get('티커')}) — 테마: {r.get('테마')}, " f"등락률: {r.get('등락률(%)')}% {arrow}, 뉴스빈도: {int(r.get('뉴스빈도', 0))}건, " f"AI점수: {r.get('AI점수')}, 거래량: {int(r.get('거래량')) if r.get('거래량') else '-'}" )
 
 st.divider()
 
 ------------------------------------------------------
 
-5) 저장 (원클릭/수동/자동) + 다운로드 버튼
+5) save (one-click/manual/auto) + download buttons
 
 ------------------------------------------------------
 
 def _render_downloads(paths: dict): try: for label, p in (paths or {}).items(): if not p or not os.path.isfile(p): continue with open(p, "rb") as f: data = f.read() fname = os.path.basename(p) st.download_button( label=f"⬇️ {label} 다운로드 ({fname})", data=data, file_name=fname, mime=( "text/csv" if fname.lower().endswith(".csv") else "application/json" if fname.lower().endswith(".json") else "application/octet-stream" ), use_container_width=True, ) except Exception as e: st.warning(f"다운로드 버튼 생성 실패: {e}")
 
-def _do_save(prefix: str = "dashboard") -> dict: if not theme_rows: raise RuntimeError("저장할 테마 데이터가 없습니다.") # Streamlit Cloud에서는 상대경로 폴더가 편함 out = save_report_and_picks(theme_rows, THEME_STOCKS, out_dir="reports", top_n=5, prefix=prefix) return out
+def _do_save(prefix: str = "dashboard") -> dict: if not theme_rows: raise RuntimeError("저장할 테마 데이터가 없습니다.") out = save_report_and_picks(theme_rows, THEME_STOCKS, out_dir="reports", top_n=5, prefix=prefix) return out
 
 st.markdown("### 🪄 한번에 분석+추천+저장") cc1, cc2 = st.columns([1, 2]) with cc1: if st.button("🪄 한번에 분석+추천+저장", use_container_width=True): if not theme_rows: st.warning("테마 신호가 약해 저장을 건너뜁니다.") else: try: paths = _do_save(prefix="oneclick") st.success("완료! 아래에서 파일을 바로 내려받을 수 있어요.") st.json(paths) _render_downloads(paths) except Exception as e: st.error(f"원클릭 처리 실패: {e}") with cc2: st.caption("* 뉴스→테마 감지→유망종목 추천→CSV/JSON 저장까지 한 번에 실행")
 
 st.markdown("### 🗂️ 리포트 & 유망종목 저장") if st.button("💾 리포트 & 유망종목 저장", use_container_width=True): try: paths = _do_save(prefix="manual") st.success("저장 완료! 아래 파일을 바로 다운로드 할 수 있어요.") st.json(paths) _render_downloads(paths) except Exception as e: st.error(f"저장 실패: {e}")
 
-세션당 1회 자동 저장
+session one-time autosave
 
 if not st.session_state.get("autosaved_once") and theme_rows: try: paths = _do_save(prefix="autosave") st.session_state["autosaved_once"] = True st.markdown("✅ 자동 저장 완료 (세션 1회)") st.json(paths) _render_downloads(paths) except Exception as e: st.warning(f"자동 저장 실패: {e}")
 
@@ -135,15 +136,13 @@ st.divider()
 
 ------------------------------------------------------
 
-6) 🧠 종목 분석 & 기록
+6) stock analyze & history
 
 ------------------------------------------------------
 
 st.markdown("## 🧠 종목 분석 & 기록")
 
 c1, c2, c3 = st.columns([2, 2, 1]) with c1: in_name = st.text_input("종목명", value="삼성전자") with c2: in_ticker = st.text_input("티커", value="005930.KS") with c3: run = st.button("🔍 분석 실행", use_container_width=True)
-
-DB 준비(여러번 호출 무해)
 
 init_db()
 
@@ -153,7 +152,7 @@ st.markdown("### 📁 최근 분석 기록") hist = load_recent(limit=10) if his
 
 ------------------------------------------------------
 
-7) 저장 파일 탐색기 + 디버그(선택)
+7) saved files explorer + debug (optional)
 
 ------------------------------------------------------
 
