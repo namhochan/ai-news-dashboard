@@ -25,12 +25,11 @@ from urllib.parse import quote
 
 _UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit(537.36) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0 Safari/537.36"
 )
 
 def _http_json(url: str, timeout: int = 6) -> dict:
-    """단순 GET→JSON (예외는 호출측에서 처리)"""
     r = requests.get(url, headers={"User-Agent": _UA}, timeout=timeout)
     r.raise_for_status()
     return r.json()
@@ -92,7 +91,6 @@ def _memo(fn, symbol: str, ttl: float = 3.0):
     return data
 
 # ====== 외부에 노출되는 함수들 ======
-
 def fetch_quote(ticker: str) -> Tuple[Optional[float], Optional[float], Optional[int]]:
     """
     (last, prev, volume) 반환
@@ -100,7 +98,6 @@ def fetch_quote(ticker: str) -> Tuple[Optional[float], Optional[float], Optional
     2) Yahoo Quote API (정규장 값) ← 정확도 우선
     3) Yahoo Chart API (최후의 수단)
     """
-    # 1) yfinance
     if _YF:
         try:
             t = yf.Ticker(ticker)
@@ -127,16 +124,13 @@ def fetch_quote(ticker: str) -> Tuple[Optional[float], Optional[float], Optional
         except Exception:
             pass
 
-    # 2) Quote API
     q = _memo(_fetch_yahoo_quote_once, ticker)
     if q != (None, None, None):
         return q
 
-    # 3) Chart API
     return _memo(_fetch_yahoo_chart_once, ticker)
 
 def fmt_number(v, d: int = 2) -> str:
-    """숫자 포맷: 천단위 콤마 / 소수 d자리; NaN/None → '-'"""
     try:
         if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
             return "-"
@@ -145,7 +139,6 @@ def fmt_number(v, d: int = 2) -> str:
         return "-"
 
 def fmt_percent(v) -> str:
-    """등락률 포맷: +1.23% / -0.45% / '-'"""
     try:
         if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
             return "-"
@@ -154,7 +147,6 @@ def fmt_percent(v) -> str:
         return "-"
 
 def build_ticker_items():
-    """상단 지수/원자재/환율 티커바 데이터."""
     rows = [
         ("KOSPI",   "^KS11", 2),
         ("KOSDAQ",  "^KQ11", 2),
@@ -180,12 +172,11 @@ def build_ticker_items():
         })
     return items
 
-# ---- (선택) OHLC + 캔들차트 도우미 ----
+# ---- (선택) OHLC + 캔들차트 ----
 import pandas as pd
 import matplotlib.pyplot as plt
 
 def get_ohlc(ticker: str, days: int = 120) -> pd.DataFrame:
-    """yfinance 있을 때만 동작, 없으면 빈 DF."""
     if not _YF:
         return pd.DataFrame()
     period_map = 365 if days > 252 else max(30, days + 10)
@@ -199,7 +190,6 @@ def get_ohlc(ticker: str, days: int = 120) -> pd.DataFrame:
     return df[["Open","High","Low","Close","Volume"]].tail(days).copy()
 
 def plot_candles(df: pd.DataFrame, title: str = "", lookback: int = 60):
-    """matplotlib 캔들 간단 출력 (양봉=빨강 / 음봉=파랑)"""
     if df is None or df.empty:
         fig, ax = plt.subplots(figsize=(8, 3))
         ax.text(0.5, 0.5, "차트 데이터 없음", ha="center", va="center")
