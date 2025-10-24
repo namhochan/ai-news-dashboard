@@ -1,4 +1,4 @@
--- coding: utf-8 --
+#-- coding: utf-8 --
 
 app.py - dashboard main (safe for Streamlit / no tzdata dependency)
 
