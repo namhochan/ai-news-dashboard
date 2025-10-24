@@ -140,3 +140,38 @@ if not rec_df.empty:
         )
 
 st.markdown("</div>", unsafe_allow_html=True)
+# (위쪽 기존 import 밑 어딘가에 추가)
+from modules.analyzer import init_db, analyze_stock, load_recent
+
+# 앱 시작 시 1회 DB 준비
+init_db()
+
+# ===========================
+# 🧠 종목 분석 & 기록
+# ===========================
+st.divider()
+st.markdown("## 🧠 종목 분석 & 기록")
+
+c1, c2, c3 = st.columns([2, 2, 1])
+with c1:
+    in_name = st.text_input("종목명", value="삼성전자")
+with c2:
+    in_ticker = st.text_input("티커", value="005930.KS")
+with c3:
+    run = st.button("🔍 분석 실행", use_container_width=True)
+
+if run:
+    try:
+        summary, data = analyze_stock(in_name.strip(), in_ticker.strip())
+        st.success(summary)
+        with st.expander("분석 원본 데이터 보기"):
+            st.json(data, expanded=False)
+    except Exception as e:
+        st.error(f"분석 중 오류: {e}")
+
+st.markdown("### 📁 최근 분석 기록")
+hist = load_recent(limit=10)
+if hist.empty:
+    st.info("아직 저장된 분석 기록이 없습니다.")
+else:
+    st.dataframe(hist, use_container_width=True, hide_index=True)
